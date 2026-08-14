@@ -114,6 +114,23 @@ func (h *handlers) createLink(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/?err=no+bank+chosen", http.StatusSeeOther)
 		return
 	}
+	// Reuse an existing link row for this bank (re-authorization), otherwise
+	// create the first one: bank_links has UNIQUE(user_id, bank).
+	existing, err := h.store.GetLinkByBank(r.Context(), defaultUserID, bank)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	if existing != nil {
+		authURL, err := h.svc.Reconnect(r.Context(), existing.ID)
+		if err != nil {
+			httpRedirErr(w, r, err)
+			return
+		}
+		log.Printf("link %d (%s) -> re-consent %s", existing.ID, bank, authURL)
+		http.Redirect(w, r, authURL, http.StatusSeeOther)
+		return
+	}
 	link, authURL, err := h.svc.StartLink(r.Context(), bank)
 	if err != nil {
 		httpRedirErr(w, r, err)
@@ -161,32 +178,19 @@ func (h *handlers) syncOne(w http.ResponseWriter, r *http.Request) {
 		http.StatusSeeOther)
 }
 
-// reconnectLink closes the old link row and starts a fresh consent flow for
-// the same bank (UNIQUE(user_id, bank) allows one row per bank).
+// reconnectLink restarts the consent flow for a link (row reused, see
+// sync.Service.Reconnect).
 func (h *handlers) reconnectLink(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "linkID"), 10, 64)
 	if err != nil {
 		http.Redirect(w, r, "/?err=bad+link+id", http.StatusSeeOther)
 		return
 	}
-	link, err := h.store.GetLink(r.Context(), id, defaultUserID)
-	if err != nil {
-		httpError(w, err)
-		return
-	}
-	if link == nil {
-		http.Redirect(w, r, "/?err=no+such+link", http.StatusSeeOther)
-		return
-	}
-	if err := h.store.SetLinkStatus(r.Context(), link.ID, store.LinkClosed, "reconnecting"); err != nil {
-		httpError(w, err)
-		return
-	}
-	newLink, authURL, err := h.svc.StartLink(r.Context(), link.Bank)
+	authURL, err := h.svc.Reconnect(r.Context(), id)
 	if err != nil {
 		httpRedirErr(w, r, err)
 		return
 	}
-	log.Printf("reconnecting %s: link %d -> %d", link.Bank, link.ID, newLink.ID)
+	log.Printf("reconnecting link %d -> consent", id)
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }

@@ -69,6 +69,19 @@ func (s *Store) GetLinkByState(ctx context.Context, state string) (*BankLink, er
 	return &l, nil
 }
 
+// GetLinkByBank finds the user's link row for a bank, if any.
+func (s *Store) GetLinkByBank(ctx context.Context, userID int64, bank string) (*BankLink, error) {
+	l, err := scanLink(s.queryRow(ctx,
+		`SELECT `+linkCols+` FROM bank_links WHERE user_id = ? AND bank = ?`, userID, bank))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get link by bank: %w", err)
+	}
+	return &l, nil
+}
+
 func (s *Store) ListLinks(ctx context.Context, userID int64) ([]BankLink, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+linkCols+` FROM bank_links WHERE user_id = ? ORDER BY id`, userID)
@@ -123,6 +136,18 @@ func (s *Store) SetLinkStatus(ctx context.Context, id int64, status, lastError s
 	return s.exec(ctx,
 		`UPDATE bank_links SET status = ?, last_error = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
 		status, lastError, id)
+}
+
+// ResetLinkPending returns an existing link row to pending_consent with a
+// fresh CSRF state, clearing any prior session. Used for re-authorization
+// (UNIQUE(user_id, bank) means we reuse the row, not replace it).
+func (s *Store) ResetLinkPending(ctx context.Context, id int64, state string) error {
+	return s.exec(ctx,
+		`UPDATE bank_links SET status = ?, state = ?, authorization_id = '', session_id = '',
+			valid_until = '', last_error = '',
+			updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+		 WHERE id = ?`,
+		LinkPendingConsent, state, id)
 }
 
 // TouchLinkSync records that a sync run completed for the link.

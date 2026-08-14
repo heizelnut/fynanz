@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"fynanz/internal/metrics"
 	"fynanz/internal/store"
 )
@@ -89,6 +91,45 @@ func (s *Service) StartLink(ctx context.Context, bank string) (*store.BankLink, 
 		return nil, "", err
 	}
 	return link, resp.URL, nil
+}
+
+// Reconnect restarts the three-legged consent for an existing link row,
+// reusing it (fresh state) instead of closing+recreating: bank_links has
+// UNIQUE(user_id, bank), and accounts hang off the link.
+func (s *Service) Reconnect(ctx context.Context, linkID int64) (string, error) {
+	userID, err := s.store.EnsureDefaultUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	link, err := s.store.GetLink(ctx, linkID, userID)
+	if err != nil {
+		return "", err
+	}
+	if link == nil {
+		return "", fmt.Errorf("sync: no link %d", linkID)
+	}
+	state := uuid.NewString()
+	if err := s.store.ResetLinkPending(ctx, link.ID, state); err != nil {
+		return "", err
+	}
+
+	validUntil := time.Now().UTC().Add(time.Duration(s.maxConsentDays) * 24 * time.Hour).
+		Format("2006-01-02T15:04:05.000000-07:00")
+	resp, err := s.client.StartAuthorization(ctx, StartAuthorizationRequest{
+		Access:      Access{ValidUntil: validUntil},
+		Aspsp:       ASPSP{Name: link.AspspName, Country: link.AspspCountry},
+		State:       state,
+		RedirectURL: s.redirectURL,
+		PSUType:     s.psuType,
+	})
+	if err != nil {
+		_ = s.store.SetLinkStatus(ctx, link.ID, store.LinkError, err.Error())
+		return "", fmt.Errorf("sync: reauth %s: %w", link.Bank, err)
+	}
+	if err := s.store.SetLinkAuthorizing(ctx, link.ID, resp.AuthorizationID); err != nil {
+		return "", err
+	}
+	return resp.URL, nil
 }
 
 // CompleteLink finishes the consent callback (code+state), activates the
