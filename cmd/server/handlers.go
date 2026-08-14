@@ -450,8 +450,10 @@ func (h *handlers) inbox(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "inbox.html", d)
 }
 
-// inboxResolve is the HTMX action: categorize + grow a rule. Responds with
-// the row replaced and the nav badge updated out-of-band.
+// inboxResolve is the HTMX action: categorize + grow a rule, then re-render
+// the whole inbox list (row removed), header count, nav badge and pager as
+// out-of-band swaps — no page reload. The form posts its limit/page (hidden
+// inputs), so the replacement reflects exactly the page the user was on.
 func (h *handlers) inboxResolve(w http.ResponseWriter, r *http.Request) {
 	txID := strID(chi.URLParam(r, "txID"))
 	catID, err := strconv.ParseInt(r.FormValue("category_id"), 10, 64)
@@ -459,21 +461,53 @@ func (h *handlers) inboxResolve(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	pattern, err := h.svc.ResolveInbox(r.Context(), txID, catID)
-	if err != nil {
+	if _, err := h.svc.ResolveInbox(r.Context(), txID, catID); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// Render only the row (hx-target) + badge (hx-swap-oob).
-	if len(h.catCache) == 0 {
-		if cats, err := h.store.ListCategories(r.Context(), defaultUserID); err == nil {
-			h.catCache = cats
+	ctx := r.Context()
+	user := defaultUserID
+
+	limit := 50
+	if v := r.FormValue("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+			limit = n
 		}
 	}
-	left, _ := h.store.UncategorizedCount(r.Context(), defaultUserID)
-	h.renderPartial(w, "inbox.html", "inbox_done_row", map[string]any{
-		"TxID": txID, "CategoryName": h.categoryName(catID), "Pattern": pattern, "UncategorizedN": left,
-	})
+	page := 1
+	if v := r.FormValue("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+	total, err := h.store.UncategorizedCount(ctx, user)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Walk back when the resolved row was the last one on its page and older
+	// pages remain (the pager re-renders with the corrected current page).
+	items, err := h.store.ListUncategorized(ctx, user, limit, (page-1)*limit)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for len(items) == 0 && page > 1 {
+		page--
+		if items, err = h.store.ListUncategorized(ctx, user, limit, (page-1)*limit); err != nil {
+			break
+		}
+	}
+	d := pageData{
+		Pagination:     makePagination(page, limit, total),
+		Uncategorized:  items,
+		UncategorizedN: total,
+		PagerBase:      "/inbox?limit=" + strconv.Itoa(limit),
+	}
+	if cats, err := h.store.ListCategories(ctx, user); err == nil {
+		d.Categories = cats
+	}
+	h.renderPartial(w, "inbox.html", "inbox_refresh", d)
 }
 
 // txOverride is the manual category override from the transactions list

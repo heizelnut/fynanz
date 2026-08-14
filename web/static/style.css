@@ -256,6 +256,7 @@ button { background: var(--accent); color: #fff; border-color: var(--accent); cu
 button:hover { filter: brightness(1.08); }
 button.danger { background: transparent; color: var(--err); border-color: var(--err); }
 .actions a { color: var(--accent); text-decoration: none; margin-left: .4rem; font-size: .85rem; }
+.badge-count[hidden] { display: none; }
 .badge-count {
   display: inline-block;
   min-width: 1.15em;

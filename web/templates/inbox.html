@@ -1,41 +1,14 @@
-// The Uncategorized inbox: resolve one-handed (AGENTS.md §10). Each row is an
-// HTMX form; answering tags the tx AND grows the rules table (§5).
+// The Uncategorized inbox: resolve one-handed (AGENTS.md §10). Resolving
+// re-renders the whole list via out-of-band swaps (hx-swap="none" + OOB) —
+// the row disappears, counts/pager update asynchronously, no page reload.
 {{define "content"}}
 <section class="panel">
-  <h2>Needs a category
-    {{if .UncategorizedN}}<span class="muted">({{.UncategorizedN}} open)</span>{{end}}
-  </h2>
-  {{if .Uncategorized}}
-  {{with index .Uncategorized 0}}<p class="muted">Pick the category — this also teaches the rule for “{{.MerchantNormalized}}” and similar.</p>{{end}}
-  <table>
-    <thead>
-      <tr><th>Date</th><th>Merchant</th><th>Details</th><th class="num">Amount</th><th>Category</th></tr>
-    </thead>
-    <tbody>
-      {{range .Uncategorized}}
-      <tr id="tx-{{.ID}}">
-        <td class="muted" data-label="Date">{{.BookingDate}}</td>
-        <td class="strong wrap mono copyable" data-label="Merchant">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
-        <td class="muted wrap mono copyable" data-label="Details">{{.RemittanceInformation}}</td>
-        <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}" data-label="Amount">{{fmtAmount .AmountMinor .Currency}}</td>
-        <td data-label="Category">
-          <form class="inline-form" hx-post="/inbox/{{.ID}}" hx-target="#tx-{{.ID}}" hx-swap="outerHTML">
-            <select name="category_id">
-              <option value="" disabled selected>Choose…</option>
-              {{range $.Categories}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
-            </select>
-            <button>Save</button>
-          </form>
-        </td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-  {{else}}
-  <p class="ok-text">Nothing to do — every transaction has a category. 🎉</p>
-  {{end}}
-
-  <div class="pager">
+  <h2>Needs a category <span class="muted" id="inbox-count">{{if .UncategorizedN}}({{.UncategorizedN}} open){{end}}</span></h2>
+  {{if .Uncategorized}}{{with index .Uncategorized 0}}
+  <p class="muted">Pick the category — this also teaches the rule for “{{.MerchantNormalized}}” and similar.</p>
+  {{end}}{{end}}
+  {{template "inbox_rows" .}}
+  <div class="pager" id="inbox-pager">
     <span class="pager-info muted">{{if gt .Pagination.Total 0}}Showing {{.Pagination.From}}–{{.Pagination.To}} of {{.Pagination.Total}} open{{end}}</span>
     {{if gt .Pagination.TotalPages 1}}
     <nav class="pager-nav">
@@ -48,11 +21,49 @@
 </section>
 {{end}}
 
-// HTMX response after resolving one row: replaces the row and updates the nav
-// badge out-of-band.
-{{define "inbox_done_row"}}
-<tr id="tx-{{.TxID}}">
-  <td colspan="5" data-label=""><span class="ok-text">✓ categorized{{if .CategoryName}} as <strong>{{.CategoryName}}</strong>{{end}}{{if .Pattern}} — rule “{{.Pattern}}” saved{{end}}</span></td>
-</tr>
-<span id="uncat-badge" hx-swap-oob="true">{{.UncategorizedN}}</span>
+// Shared by the initial page and the async refresh. The tbody carries
+// hx-swap-oob so the refresh response places it over the current one.
+{{define "inbox_rows"}}
+<tbody id="inbox-body" hx-swap-oob="true">
+  {{range .Uncategorized}}
+  <tr id="tx-{{.ID}}">
+    <td class="muted" data-label="Date">{{.BookingDate}}</td>
+    <td class="strong wrap mono copyable" data-label="Merchant">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
+    <td class="muted wrap mono copyable" data-label="Details">{{.RemittanceInformation}}</td>
+    <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}" data-label="Amount">{{fmtAmount .AmountMinor .Currency}}</td>
+    <td data-label="Category">
+      <form class="inline-form" hx-post="/inbox/{{.ID}}" hx-swap="none">
+        <select name="category_id">
+          <option value="" disabled selected>Choose…</option>
+          {{range $.Categories}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+        </select>
+        <input type="hidden" name="limit" value="{{$.Pagination.Limit}}">
+        <input type="hidden" name="page" value="{{$.Pagination.Current}}">
+        <button>Save</button>
+      </form>
+    </td>
+  </tr>
+  {{else}}
+  <tr>
+    <td colspan="5" data-label=""><p class="ok-text">Nothing to do — every transaction has a category. 🎉</p></td>
+  </tr>
+  {{end}}
+</tbody>
+{{end}}
+
+// Async resolve response: replaced list + counts + pager, nothing in-band.
+{{define "inbox_refresh"}}
+{{template "inbox_rows" .}}
+<span id="uncat-badge" hx-swap-oob="true" class="badge-count" {{if not .UncategorizedN}}hidden{{end}}>{{.UncategorizedN}}</span>
+<span id="inbox-count" hx-swap-oob="true">{{if .UncategorizedN}}({{.UncategorizedN}} open){{end}}</span>
+<div class="pager" id="inbox-pager" hx-swap-oob="true">
+  <span class="pager-info muted">{{if gt .Pagination.Total 0}}Showing {{.Pagination.From}}–{{.Pagination.To}} of {{.Pagination.Total}} open{{end}}</span>
+  {{if gt .Pagination.TotalPages 1}}
+  <nav class="pager-nav">
+    {{if .Pagination.Prev}}<a href="{{.PagerBase}}&amp;page={{.Pagination.Prev}}">« Prev</a>{{else}}<span class="muted">« Prev</span>{{end}}
+    {{range $n := .Pagination.Pages}}{{if eq $n -1}}<span class="muted">…</span>{{else}}<a class="{{if eq $n $.Pagination.Current}}current{{end}}" href="{{$.PagerBase}}&amp;page={{$n}}">{{$n}}</a>{{end}}{{end}}
+    {{if .Pagination.Next}}<a href="{{.PagerBase}}&amp;page={{.Pagination.Next}}">Next »</a>{{else}}<span class="muted">Next »</span>{{end}}
+  </nav>
+  {{end}}
+</div>
 {{end}}
