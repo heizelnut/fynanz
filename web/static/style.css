@@ -65,6 +65,8 @@ body {
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
+  /* Above in-content floats (e.g. the chart hover label, z-index 5). */
+  z-index: 10;
 }
 .brand { font-weight: 700; color: var(--fg); text-decoration: none; font-size: 1.1rem; }
 .topbar nav a { color: var(--muted); text-decoration: none; margin-right: .9rem; }
