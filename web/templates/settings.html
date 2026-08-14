@@ -11,13 +11,16 @@
       <option value="ntfy">ntfy</option>
       <option value="webhook">Webhook</option>
     </select>
+    <!-- No `required` here: the invisible field group would silently block
+         submission (browser validates hidden controls too). The server
+         validates eagerly on save instead. -->
     <span id="ntfy-fields">
       <input type="url" name="ntfy_url" value="https://ntfy.sh" style="width:14em" title="ntfy server (e.g. ntfy.sh or self-hosted)">
-      <input type="text" name="ntfy_topic" placeholder="topic" required style="width:10em">
+      <input type="text" name="ntfy_topic" placeholder="topic" style="width:10em">
       <input type="password" name="ntfy_token" placeholder="access token (optional)" style="width:12em">
     </span>
     <span id="webhook-fields" style="display:none">
-      <input type="url" name="webhook_url" placeholder="https://…/receive" required style="width:20em">
+      <input type="url" name="webhook_url" placeholder="https://…/receive" style="width:20em">
     </span>
     <button>Add</button>
     <div class="check-grid">

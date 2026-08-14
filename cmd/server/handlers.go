@@ -551,25 +551,24 @@ func (h *handlers) notificationsAdd(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings?err=unknown+channel+type", http.StatusSeeOther)
 		return
 	}
-	var config string
+	// Eagerly validate the config through the backend's own factory, so a
+	// mistyped/empty URL fails here with a visible error instead of silently
+	// at every send attempt later.
+	var raw []byte
 	switch typ {
 	case "ntfy":
 		c := notify.NtfyConfig{URL: r.FormValue("ntfy_url"), Topic: r.FormValue("ntfy_topic"), Token: r.FormValue("ntfy_token")}
-		raw, err := json.Marshal(c)
-		if err != nil {
-			httpRedirErr(w, r, err)
-			return
-		}
-		config = string(raw)
+		raw, _ = json.Marshal(c)
 	case "webhook":
 		c := notify.WebhookConfig{URL: r.FormValue("webhook_url")}
-		raw, err := json.Marshal(c)
-		if err != nil {
-			httpRedirErr(w, r, err)
-			return
-		}
-		config = string(raw)
+		raw, _ = json.Marshal(c)
 	}
+	factory := map[string]notify.Factory{"ntfy": notify.NtfyFactory, "webhook": notify.WebhookFactory}[typ]
+	if _, err := factory(raw); err != nil {
+		httpRedirErr(w, r, fmt.Errorf("invalid channel: %w", err))
+		return
+	}
+	config := string(raw)
 	events := map[notify.Event]bool{}
 	for _, e := range []notify.Event{notify.EventNeedsCategory, notify.EventReauthNeeded, notify.EventSyncFailed} {
 		events[e] = r.FormValue(string(e)) == "on"
