@@ -62,29 +62,6 @@ Multi-architecture images (the binary is static, no CGO):
 docker buildx build --platform linux/amd64,linux/arm64 -t fynanz:latest .
 ```
 
-## Private image registry (optional, for push-to-homelab builds)
-
-The default flow builds on the homelab (`git pull && make docker-up`). If you
-prefer to **build on your dev machine and push**, run a private registry
-(`registry:2`, not Harbor — that's a full appliance you don't need for one
-image):
-
-```sh
-# on the lab, once:
-cd deploy && docker compose -f registry-compose.yml up -d
-# (optional auth — generates deploy/htpasswd, then uncomment the REGISTRY_AUTH lines)
-docker run --rm --entrypoint htpasswd registry:2 -Bbn <user> <secret> > deploy/htpasswd
-
-# on the dev machine:
-make image REGISTRY=registry.heiz.cc
-# lab later: docker pull registry.heiz.cc/fynanz:latest  (or image: in compose)
-```
-
-Keep the registry's Traefik route **tailnet-only** (see the compose file).
-The TLS cert from your existing DNS-01 resolver is what makes `docker push`
-"just work" from any machine. For a single host, `docker save | ssh lab
-docker load` is a zero-service alternative.
-
 ## Homelab deployment (Traefik + Tailscale)
 
 Per AGENTS.md the app trusts the network boundary — no login in v1. Put it on
