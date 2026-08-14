@@ -29,6 +29,9 @@ body {
 .brand { font-weight: 700; color: var(--fg); text-decoration: none; font-size: 1.1rem; }
 .topbar nav a { color: var(--muted); text-decoration: none; margin-right: .9rem; }
 .topbar nav a:hover { color: var(--accent); }
+/* The 2-letter nav codes only exist on small screens (base.html renders
+   both; desktop hides the code, mobile hides the full name). */
+.nav-short { display: none; }
 .count { margin-left: auto; color: var(--muted); font-size: .85rem; }
 .flash { padding: .5rem .8rem; margin: .6rem 1rem 0; border-radius: 6px; font-size: .9rem; }
 .flash.ok { background: #e6f4ea; color: var(--ok); }
@@ -132,6 +135,8 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
 @media (max-width: 720px) {
   .panel { padding: .5rem .6rem; }
   .topbar { gap: .8rem; }
+  .nav-full { display: none; }
+  .nav-short { display: inline; font-weight: 700; }
 
   table, thead, tbody, tr, td { display: block; }
   thead { display: none; }
