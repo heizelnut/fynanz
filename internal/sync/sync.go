@@ -86,15 +86,33 @@ func (s *Service) resolveASPSP(ctx context.Context, bank string) (name, country 
 
 // consentValidity caps the requested consent at the bank's own maximum
 // (the API rejects values beyond now + maximum_consent_validity) and at the
-// configured default.
-func (s *Service) consentValidity(bankMaxSecs *int64) time.Duration {
-	capD := time.Duration(s.maxConsentDays) * 24 * time.Hour
+// configured default (env or Settings-page override).
+func (s *Service) consentValidity(ctx context.Context, userID int64, bankMaxSecs *int64) time.Duration {
+	capD := time.Duration(s.consentDaysFor(ctx, userID)) * 24 * time.Hour
 	if bankMaxSecs != nil && *bankMaxSecs > 0 {
 		if bank := time.Duration(*bankMaxSecs) * time.Second; bank < capD {
 			capD = bank
 		}
 	}
 	return capD
+}
+
+// psuTypeFor and consentDaysFor honour Settings-page overrides on top of the
+// env defaults (config resolved per connect, no restart needed).
+func (s *Service) psuTypeFor(ctx context.Context, userID int64) string {
+	if v, err := s.store.GetSetting(ctx, userID, store.SettingEBPSUType); err == nil && v != "" {
+		return v
+	}
+	return s.psuType
+}
+
+func (s *Service) consentDaysFor(ctx context.Context, userID int64) int {
+	if v, err := s.store.GetSetting(ctx, userID, store.SettingEBMaxConsentDays); err == nil && v != "" {
+		if n, err2 := strconv.Atoi(v); err2 == nil && n > 0 {
+			return n
+		}
+	}
+	return s.maxConsentDays
 }
 
 // aspspFor returns the default (name, country) guesses for a link's bank key
@@ -125,14 +143,14 @@ func (s *Service) StartLink(ctx context.Context, bank string) (*store.BankLink, 
 		return nil, "", err
 	}
 
-	validUntil := time.Now().UTC().Add(s.consentValidity(maxSecs)).
+	validUntil := time.Now().UTC().Add(s.consentValidity(ctx, userID, maxSecs)).
 		Format("2006-01-02T15:04:05.000000-07:00")
 	req := StartAuthorizationRequest{
 		Access:      Access{ValidUntil: validUntil},
 		Aspsp:       ASPSP{Name: name, Country: country},
 		State:       link.State,
 		RedirectURL: s.redirectURL,
-		PSUType:     s.psuType,
+		PSUType:     s.psuTypeFor(ctx, userID),
 	}
 	resp, err := s.client.StartAuthorization(ctx, req)
 	if err != nil {
@@ -165,7 +183,7 @@ func (s *Service) Reconnect(ctx context.Context, linkID int64) (string, error) {
 		return "", err
 	}
 
-	validUntil := time.Now().UTC().Add(time.Duration(s.maxConsentDays) * 24 * time.Hour).
+	validUntil := time.Now().UTC().Add(s.consentValidity(ctx, userID, nil)).
 		Format("2006-01-02T15:04:05.000000-07:00")
 	resp, err := s.client.StartAuthorization(ctx, StartAuthorizationRequest{
 		Access:      Access{ValidUntil: validUntil},

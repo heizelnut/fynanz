@@ -362,3 +362,30 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
 .panel h3 { font-size: .95rem; margin: 1.1rem 0 .35rem; }
 .panel ul { margin: .3rem 0 .6rem; padding-left: 1.2rem; }
 .panel li { margin: .2rem 0; }
+
+/* Settings forms (Enable Banking panel) */
+.form-stack { display: grid; gap: .35rem 0; max-width: 42em; margin: .8rem 0; }
+.form-stack label { font-size: .85rem; color: var(--muted); }
+.form-stack textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .85rem;
+  resize: vertical;
+  background: var(--input-bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .4rem .6rem;
+}
+.form-row { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: end; }
+.verify {
+  margin-top: .7rem;
+  padding: .5rem .7rem;
+  border-radius: 6px;
+  font-size: .9rem;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.verify.ok { background: var(--flash-ok-bg); color: var(--ok); }
+.verify.err { background: var(--flash-err-bg); color: var(--err); }
+.err-text { color: var(--err); }
+button.neutral { background: var(--surface); color: var(--fg); }

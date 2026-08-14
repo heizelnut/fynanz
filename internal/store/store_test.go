@@ -347,3 +347,33 @@ func TestEmptyEntryReferenceGetsPseudoRef(t *testing.T) {
 		t.Errorf("pseudo-ref dedupe failed: re-inserted %d rows", ins)
 	}
 }
+
+func TestSettingsCRUD(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+
+	if v, _ := st.GetSetting(ctx, uid, "eb_app_id"); v != "" {
+		t.Errorf("unset setting should be empty, got %q", v)
+	}
+	if err := st.SetSetting(ctx, uid, "eb_app_id", "app-1"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := st.GetSetting(ctx, uid, "eb_app_id"); v != "app-1" {
+		t.Errorf("got %q, want app-1", v)
+	}
+	// Upsert updates.
+	if err := st.SetSetting(ctx, uid, "eb_app_id", "app-2"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := st.GetSetting(ctx, uid, "eb_app_id"); v != "app-2" {
+		t.Errorf("got %q, want app-2", v)
+	}
+	// Empty clears (back to env defaults).
+	if err := st.SetSetting(ctx, uid, "eb_app_id", ""); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := st.GetSetting(ctx, uid, "eb_app_id"); v != "" {
+		t.Errorf("cleared setting should be empty, got %q", v)
+	}
+}

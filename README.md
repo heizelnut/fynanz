@@ -51,6 +51,9 @@ docker compose up --build     # or: make docker-up
 - The SQLite database persists in the `fynanz-data` volume.
 - The private key is bind-mounted read-only at `/data/fynanz-key.pem`;
   `EB_KEY_HOST_PATH` is its host-side path, if it lives elsewhere just edit it.
+  **Or skip the mount entirely**: paste the key on Settings → Enable Banking,
+  where credentials live in the DB (override the env defaults, apply
+  immediately — ideal for configuring a production app after deploy).
 - `docker compose down` keeps the data volume; add `-v` to wipe it.
 
 Multi-architecture images (the binary is static, no CGO):
@@ -87,6 +90,11 @@ Tailscale and front it with Traefik (DNS-01 TLS).
 - **Notifications**: configure channels in **Settings** — ntfy (topic +
   optional token) or webhook (plain JSON POST). Each channel routes events
   independently (new tx / re-auth / sync failed).
+- **Enable Banking credentials**: also in **Settings** — paste the app id +
+  private key for any environment (sandbox/production), click *Validate*
+  (live check: identity, environment, callback registration), save. No env
+  editing, no restart; the DB value overrides env.
+  `make creds` / `make aspsps` remain available for CLI checks.
 - **Re-auth**: consent sessions expire (PSD2); the link badge turns red and a
   notification fires. One tap re-opens the consent flow.
 - **Metrics**: `<base>/metrics` (Prometheus text format) — sync runs and

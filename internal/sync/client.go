@@ -59,28 +59,53 @@ func IsSessionError(err error) bool {
 	return sessionErrorCodes[ae.Code]
 }
 
-// Client talks to the Enable Banking API. Each request carries a fresh JWT;
-// no token caching needed since TTL is short.
-type Client struct {
-	baseURL    string
-	appID      string
-	privateKey *rsa.PrivateKey
-	http       *http.Client
-	now        func() time.Time // clock for tests
+// Credentials is the identity a Client signs requests with. Configurable
+// per request so credentials can live in the DB (Settings page) and change
+// without restarting (see NewDynamicClient).
+type Credentials struct {
+	BaseURL    string
+	AppID      string
+	PrivateKey *rsa.PrivateKey
 }
 
+// CredentialResolver supplies the current credentials; errors are surfaced
+// as API failures.
+type CredentialResolver func() (Credentials, error)
+
+// Client talks to the Enable Banking API. Each request carries a fresh JWT;
+// no token caching needed since TTL is short.
+// Client talks to the Enable Banking API. Each request carries a fresh JWT
+// (no token caching; TTL is short). Credentials come from resolve, so the
+// app can switch sandbox/production from the Settings page without restart.
+type Client struct {
+	resolve CredentialResolver
+	http    *http.Client
+	now     func() time.Time // clock for tests
+}
+
+// NewClient pins fixed credentials (tests, CLI tools).
 func NewClient(baseURL, appID string, privateKey *rsa.PrivateKey) *Client {
+	return NewDynamicClient(func() (Credentials, error) {
+		return Credentials{BaseURL: baseURL, AppID: appID, PrivateKey: privateKey}, nil
+	})
+}
+
+// NewDynamicClient resolves credentials on every call — the server uses this
+// so Enable Banking settings edited in the UI apply immediately.
+func NewDynamicClient(resolve CredentialResolver) *Client {
 	return &Client{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		appID:      appID,
-		privateKey: privateKey,
-		http:       &http.Client{Timeout: 30 * time.Second},
-		now:        time.Now,
+		resolve: resolve,
+		http:    &http.Client{Timeout: 30 * time.Second},
+		now:     time.Now,
 	}
 }
 
 func (c *Client) do(ctx context.Context, method, path string, body, out any) (*http.Response, error) {
-	token, err := signClientJWT(c.appID, c.privateKey, c.now())
+	cr, err := c.resolve()
+	if err != nil {
+		return nil, err
+	}
+	token, err := signClientJWT(cr.AppID, cr.PrivateKey, c.now())
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +117,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) (*h
 		}
 		rd = bytes.NewReader(b)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, rd)
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(cr.BaseURL, "/")+path, rd)
 	if err != nil {
 		return nil, err
 	}

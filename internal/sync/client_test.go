@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -32,6 +33,7 @@ type fakeEB struct {
 	txnsAfter   []Transaction // served instead of paging after the first fetch
 	aspsps      []ASPSPData   // served for GET /aspsps
 	lastAuthReq StartAuthorizationRequest
+	expectKID   string // jwt kid the fake accepts (default test-app)
 }
 
 // setSessionErr toggles the session failure for GET /sessions/{id}
@@ -58,8 +60,12 @@ func (f *fakeEB) handler() http.Handler {
 			return
 		}
 		kid := extractKID(f.t, parts[0])
-		if kid != "test-app" {
-			f.t.Errorf("JWT kid = %q, want test-app", kid)
+		want := f.expectKID
+		if want == "" {
+			want = "test-app"
+		}
+		if kid != want {
+			f.t.Errorf("JWT kid = %q, want %q", kid, want)
 		}
 
 		if f.statusCode != 0 {
@@ -274,3 +280,45 @@ func TestIsSessionError(t *testing.T) {
 func strPtr(s string) *string { return &s }
 
 var _ = url.QueryEscape // keep net/url import (used in client)
+
+// TestDynamicClientCredentialSwitch: a client built with NewDynamicClient
+// re-signs with whatever the resolver returns — no fixed identity.
+func TestDynamicClientCredentialSwitch(t *testing.T) {
+	key1, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key2, _ := rsa.GenerateKey(rand.Reader, 2048)
+
+	current := Credentials{BaseURL: "", AppID: "", PrivateKey: nil}
+	c := NewDynamicClient(func() (Credentials, error) {
+		if current.AppID == "" {
+			return Credentials{}, errors.New("credentials not configured yet")
+		}
+		return current, nil
+	})
+
+	f := &fakeEB{aspsps: []ASPSPData{{Name: "Mock ASPSP", Country: "FI"}}}
+	f.t = t
+	srv := httptest.NewServer(f.handler())
+	defer srv.Close()
+	c.http = srv.Client()
+	base := srv.URL
+
+	// Resolver error surfaces without any request.
+	if _, err := c.ListASPSPs(context.Background(), "FI"); err == nil || !strings.Contains(err.Error(), "not configured yet") {
+		t.Errorf("resolver error not surfaced: %v", err)
+	}
+
+	// Credential switch: key + kid change between calls.
+	current = Credentials{BaseURL: base, AppID: "app-one", PrivateKey: key1}
+	f.expectKID = "app-one"
+	if _, err := c.ListASPSPs(context.Background(), "FI"); err != nil {
+		t.Fatal(err)
+	}
+	current = Credentials{BaseURL: base, AppID: "app-two", PrivateKey: key2}
+	f.expectKID = "app-two"
+	if _, err := c.ListASPSPs(context.Background(), "FI"); err != nil {
+		t.Fatal(err)
+	}
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -23,13 +25,14 @@ type handlers struct {
 	store    *store.Store
 	svc      *sync.Service
 	rec      metrics.Recorder
+	cfg      Config
 	pages    map[string]*template.Template // one set per page (template.go)
 	accCache []store.Account               // account id -> display name, refreshed per page
 	catCache []store.Category              // category id -> name, refreshed per page
 }
 
-func newServer(st *store.Store, svc *sync.Service) http.Handler {
-	h := &handlers{store: st, svc: svc, rec: metrics.Recorder{}}
+func newServer(st *store.Store, svc *sync.Service, cfg Config) http.Handler {
+	h := &handlers{store: st, svc: svc, rec: metrics.Recorder{}, cfg: cfg}
 	if err := h.loadTemplates(); err != nil {
 		log.Fatalf("templates: %v", err)
 	}
@@ -48,6 +51,9 @@ func newServer(st *store.Store, svc *sync.Service) http.Handler {
 	r.Get("/privacy", h.legalPage("Privacy policy", "privacy.html"))
 	r.Post("/settings/notifications", h.notificationsAdd)
 	r.Post("/settings/notifications/{chID}/delete", h.notificationsDelete)
+	r.Post("/settings/enablebanking", h.ebSave)
+	r.Post("/settings/enablebanking/validate", h.ebValidate)
+	r.Post("/settings/enablebanking/reset", h.ebReset)
 	r.Post("/links", h.createLink)
 	r.Get("/links/callback", h.linkCallback)
 	r.Get("/links/sync", h.syncAll)
@@ -520,6 +526,145 @@ func (h *handlers) categories(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "categories.html", categoryPageData{pageData: data, CatTxCounts: cc})
 }
 
+// ebSave persists the Enable Banking settings from the form (DB > env at
+// resolve time; empty field = clear back to env). Applies immediately — the
+// credential resolver reads the DB per request.
+func (h *handlers) ebSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, err := h.store.EnsureDefaultUser(ctx)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	keyPEM := strings.TrimSpace(r.FormValue("private_key"))
+	if keyPEM != "" {
+		if _, err := sync.ParseRSAPrivateKey([]byte(keyPEM)); err != nil {
+			httpRedirErr(w, r, fmt.Errorf("private key does not parse: %w", err))
+			return
+		}
+	}
+	if keyPEM != "" {
+		_ = h.store.SetSetting(ctx, userID, store.SettingEBPrivateKey, keyPEM)
+	}
+	// Non-key fields: empty removes the override (back to env).
+	pairs := []struct{ key, value string }{
+		{store.SettingEBAppID, strings.TrimSpace(r.FormValue("app_id"))},
+		{store.SettingEBBaseURL, strings.TrimSpace(r.FormValue("base_url"))},
+		{store.SettingEBPSUType, r.FormValue("psu_type")},
+		{store.SettingEBMaxConsentDays, r.FormValue("max_consent_days")},
+	}
+	for _, p := range pairs {
+		if err := h.store.SetSetting(ctx, userID, p.key, p.value); err != nil {
+			httpRedirErr(w, r, err)
+			return
+		}
+	}
+	http.Redirect(w, r, "/settings?msg=enable+banking+settings+saved", http.StatusSeeOther)
+}
+
+// ebValidate tests the form's current values against the API without storing
+// anything (HTMX): identity, environment, and callback registration.
+func (h *handlers) ebValidate(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	stored, storedKey, err := resolveEB(ctx, h.store, h.cfg)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	appID := firstNonEmpty(strings.TrimSpace(r.FormValue("app_id")), stored.AppID)
+	baseURL := firstNonEmpty(strings.TrimSpace(r.FormValue("base_url")), stored.BaseURL)
+	key := storedKey
+	if pem := strings.TrimSpace(r.FormValue("private_key")); pem != "" {
+		k, err := sync.ParseRSAPrivateKey([]byte(pem))
+		if err != nil {
+			h.renderPartial(w, "settings.html", "eb_validate", map[string]any{"Ok": false, "Error": "key does not parse: " + err.Error()})
+			return
+		}
+		key = k
+	}
+	if appID == "" || baseURL == "" || key == nil {
+		h.renderPartial(w, "settings.html", "eb_validate", map[string]any{"Ok": false, "Error": "missing app id, base URL or private key"})
+		return
+	}
+	app, err := sync.NewClient(baseURL, appID, key).GetApplication(ctx)
+	if err != nil {
+		h.renderPartial(w, "settings.html", "eb_validate", map[string]any{"Ok": false, "Error": err.Error()})
+		return
+	}
+	callbackOK := false
+	for _, u := range app.RedirectURLs {
+		if strings.TrimRight(u, "/") == strings.TrimRight(h.cfg.PublicBaseURL+"/links/callback", "/") {
+			callbackOK = true
+			break
+		}
+	}
+	h.renderPartial(w, "settings.html", "eb_validate", map[string]any{
+		"Ok": true, "Name": app.Name, "Kid": app.Kid, "Environment": app.Environment,
+		"CallbackOK": callbackOK, "RedirectURL": h.cfg.PublicBaseURL + "/links/callback",
+	})
+}
+
+func (h *handlers) ebReset(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID, err := h.store.EnsureDefaultUser(ctx)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	for _, k := range []string{store.SettingEBAppID, store.SettingEBPrivateKey, store.SettingEBBaseURL, store.SettingEBPSUType, store.SettingEBMaxConsentDays} {
+		_ = h.store.SetSetting(ctx, userID, k, "")
+	}
+	http.Redirect(w, r, "/settings?msg=credentials+reset+to+env+defaults", http.StatusSeeOther)
+}
+
+// resolveEB computes the effective Enable Banking config: Settings (DB)
+// overrides env defaults; RedirectURL derives from the public origin.
+// Returns the parsed key (nil when unset) and where it came from.
+func resolveEB(ctx context.Context, st *store.Store, cfg Config) (ebState, *rsa.PrivateKey, error) {
+	var st2 ebState
+	userID, err := st.EnsureDefaultUser(ctx)
+	if err != nil {
+		return st2, nil, err
+	}
+	dbGet := func(k string) string {
+		v, _ := st.GetSetting(ctx, userID, k)
+		return v
+	}
+	st2.AppID = firstNonEmpty(dbGet(store.SettingEBAppID), cfg.EBAppID)
+	st2.BaseURL = firstNonEmpty(dbGet(store.SettingEBBaseURL), cfg.EBBaseURL)
+	st2.PSUType = firstNonEmpty(dbGet(store.SettingEBPSUType), cfg.PSUType)
+	st2.MaxConsentDays = firstNonEmpty(dbGet(store.SettingEBMaxConsentDays), strconv.Itoa(cfg.MaxConsentDays))
+	st2.RedirectURL = cfg.PublicBaseURL + "/links/callback"
+
+	var key *rsa.PrivateKey
+	if pemText := dbGet(store.SettingEBPrivateKey); pemText != "" {
+		k, err := sync.ParseRSAPrivateKey([]byte(pemText))
+		if err != nil {
+			return st2, nil, fmt.Errorf("stored Enable Banking private key is invalid: %w", err)
+		}
+		key = k
+		st2.KeySource = "db"
+	} else if cfg.EBCertPath != "" {
+		if k, err := loadRSAPrivateKey(cfg.EBCertPath); err == nil {
+			key = k
+			st2.KeySource = "env"
+		}
+	}
+	st2.KeySet = key != nil
+	return st2, key, nil
+}
+
+// ebState is the Settings panel's view of the effective EB configuration.
+type ebState struct {
+	AppID          string
+	BaseURL        string
+	PSUType        string
+	MaxConsentDays string
+	KeySet         bool
+	KeySource      string // "db" | "env" | ""
+	RedirectURL    string
+}
+
 // legalPage renders the terms/privacy documents (used by the prod-app
 // registration and as in-app pages). No nav highlighting.
 func (h *handlers) legalPage(title, page string) http.HandlerFunc {
@@ -545,12 +690,19 @@ func (h *handlers) settings(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	eb, _, err := resolveEB(r.Context(), h.store, h.cfg)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
 	settingsData := struct {
 		pageData
 		Channels []store.NotificationChannel
+		EB       ebState
 	}{
 		pageData: data,
 		Channels: ch,
+		EB:       eb,
 	}
 	settingsData.ActiveNav = "settings"
 	h.render(w, "settings.html", settingsData)

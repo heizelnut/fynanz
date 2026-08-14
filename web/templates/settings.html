@@ -1,6 +1,48 @@
-// Notification channel configuration (AGENTS.md §7): add/remove ntfy or
-// webhook channels, each with per-event routing (all toggleable).
+// Settings: Enable Banking credentials (configured post-deploy without env
+// edits) + notification channels (AGENTS.md §7).
 {{define "content"}}
+<section class="panel">
+  <h2>Enable Banking</h2>
+  <p class="muted">Credentials resolve from here (DB) over the env defaults — so a deployed
+  instance can be pointed at a production app entirely from this page, no server file edits, no restart.</p>
+
+  {{if .EB.KeySet}}
+  <p class="muted">Status: <span class="ok-text">configured</span> {{if eq .EB.KeySource "db"}}<span class="muted">(stored in Settings{{if .EB.AppID}} — app <span class="mono">{{.EB.AppID}}</span>{{end}})</span>{{else}}<span class="muted">(from env / .env)</span>{{end}}</p>
+  {{else}}
+  <p class="muted">Status: <span class="err-text">not configured</span> — add the production app id and key below.</p>
+  {{end}}
+
+  <form class="form-stack" method="post" action="/settings/enablebanking">
+    <label for="eb_app_id">App ID (the .pem filename / kid)</label>
+    <input id="eb_app_id" name="app_id" value="{{.EB.AppID}}" placeholder="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" style="width:min(30em,100%)">
+    <label for="eb_key">Private key (paste the whole .pem — leave empty to keep the stored key)</label>
+    <textarea id="eb_key" name="private_key" rows="4" placeholder="-----BEGIN PRIVATE KEY-----… paste to replace / add"></textarea>
+    <label for="eb_base_url">API base URL</label>
+    <input id="eb_base_url" name="base_url" value="{{.EB.BaseURL}}" style="width:min(30em,100%)">
+    <div class="form-row">
+      <span>
+        <label for="eb_psu">PSU type</label>
+        <select id="eb_psu" name="psu_type">
+          <option value="personal" {{if eq .EB.PSUType "personal"}}selected{{end}}>personal</option>
+          <option value="business" {{if eq .EB.PSUType "business"}}selected{{end}}>business</option>
+        </select>
+      </span>
+      <span>
+        <label for="eb_consent">Max consent (days)</label>
+        <input id="eb_consent" name="max_consent_days" type="number" min="1" value="{{.EB.MaxConsentDays}}" style="width:6em">
+      </span>
+    </div>
+    <p class="muted">Callback registered for this install: <span class="mono">{{.EB.RedirectURL}}</span> —
+    it must be on the app's allowed redirect list (validate below checks this).</p>
+    <div class="inline-form">
+      <button>Save</button>
+      <button type="button" class="neutral" hx-post="/settings/enablebanking/validate" hx-target="#eb-validate" hx-include="closest form">Validate credentials</button>
+      <button type="button" class="danger" onclick="this.form.action='/settings/enablebanking/reset';this.form.submit()">Reset to env</button>
+    </div>
+  </form>
+  <div id="eb-validate"></div>
+</section>
+
 <section class="panel">
   <h2>Notification channels</h2>
   <p class="muted">Channels send pushes when a sync needs your attention — new transactions to categorize, a bank session expiring, or a failed sync. Multiple channels can be active at once, each with its own event routing.</p>
@@ -55,4 +97,17 @@
   <p class="muted">No channels yet — add one above (ntfy.sh works with a public topic, or point at a self-hosted instance).</p>
   {{end}}
 </section>
+{{end}}
+
+// HTMX target for the credential check (form values, nothing stored yet).
+{{define "eb_validate"}}
+<div class="verify {{.Ok}}">
+  {{if .Ok}}
+    ✓ Authenticated as <strong>{{.Name}}</strong> — app id <span class="mono">{{.Kid}}</span>, environment
+    <strong>{{.Environment}}</strong>. Callback on the allowed list:
+    {{if .CallbackOK}}<span class="ok-text">yes</span>{{else}}<span class="err-text">no — add <span class="mono">{{.RedirectURL}}</span> to the app's redirect URLs in the control panel</span>{{end}}
+  {{else}}
+    ✗ Failed: {{.Error}}
+  {{end}}
+</div>
 {{end}}

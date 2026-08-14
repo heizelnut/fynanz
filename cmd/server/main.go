@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -27,14 +28,6 @@ func main() {
 	_ = godotenv.Load() // .env is optional; real env is the source of truth
 	cfg := loadConfig()
 
-	if cfg.EBAppID == "" || cfg.EBCertPath == "" {
-		log.Fatalf("ENABLE_BANKING_APP_ID and ENABLE_BANKING_PRIVATE_KEY must be set (see .env.example)")
-	}
-	key, err := loadRSAPrivateKey(cfg.EBCertPath)
-	if err != nil {
-		log.Fatalf("load private key: %v", err)
-	}
-
 	st, err := store.Open(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("open store: %v", err)
@@ -48,17 +41,22 @@ func main() {
 		log.Fatalf("seed user: %v", err)
 	}
 
-	client := sync.NewClient(cfg.EBBaseURL, cfg.EBAppID, key)
+	// Credentials resolve per request from Settings (DB) > env — so the
+	// production app can be configured completely from the UI after deploy;
+	// the server also boots without credentials so the Settings page can
+	// provide them (previously a startup fatal).
+	client := sync.NewDynamicClient(bankResolve(st, cfg))
 	notifier := notify.NewDispatcher(buildNotifyLoader(st))
+	redirectURL := cfg.PublicBaseURL + "/links/callback"
 	svc := sync.NewService(st, client, metrics.Recorder{}, notifier, cfg.PublicBaseURL,
-		cfg.EBRedirectURL, cfg.PSUType, cfg.HistoryDays, cfg.MaxConsentDays)
+		redirectURL, cfg.PSUType, cfg.HistoryDays, cfg.MaxConsentDays)
 
 	// Backfill categorization for rows synced before rules existed (§5).
 	if err := svc.Reclassify(ctx); err != nil {
 		log.Printf("reclassify: %v", err)
 	}
 
-	srv := newServer(st, svc)
+	srv := newServer(st, svc, cfg)
 	go runScheduler(ctx, svc, cfg.SyncInterval)
 
 	addr := ":" + cfg.Port
@@ -66,6 +64,53 @@ func main() {
 	if err := http.ListenAndServe(addr, srv); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server: %v", err)
 	}
+}
+
+// bankResolve returns Enable Banking credentials with precedence
+// Settings (DB) > environment; errors surface as API failures (e.g. during
+// connect) with a pointer to the Settings page.
+func bankResolve(st *store.Store, cfg Config) sync.CredentialResolver {
+	ctx := context.Background()
+	return func() (sync.Credentials, error) {
+		userID, err := st.EnsureDefaultUser(ctx)
+		if err != nil {
+			return sync.Credentials{}, err
+		}
+		dbGet := func(k string) string {
+			v, _ := st.GetSetting(ctx, userID, k)
+			return v
+		}
+		appID := firstNonEmpty(dbGet(store.SettingEBAppID), cfg.EBAppID)
+		baseURL := firstNonEmpty(dbGet(store.SettingEBBaseURL), cfg.EBBaseURL)
+
+		var key *rsa.PrivateKey
+		if pemText := dbGet(store.SettingEBPrivateKey); pemText != "" {
+			k, err := sync.ParseRSAPrivateKey([]byte(pemText))
+			if err != nil {
+				return sync.Credentials{}, fmt.Errorf("stored Enable Banking private key is invalid: %w", err)
+			}
+			key = k
+		} else if cfg.EBCertPath != "" {
+			k, err := loadRSAPrivateKey(cfg.EBCertPath)
+			if err == nil {
+				key = k
+			}
+		}
+
+		if appID == "" || baseURL == "" || key == nil {
+			return sync.Credentials{}, errors.New("enable Banking credentials are not configured — add them in Settings → Enable Banking")
+		}
+		return sync.Credentials{BaseURL: baseURL, AppID: appID, PrivateKey: key}, nil
+	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // buildNotifyLoader serves channel configs from the store for the notifier
