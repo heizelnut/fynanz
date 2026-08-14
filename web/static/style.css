@@ -108,7 +108,11 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
   table, thead, tbody, tr, td { display: block; }
   thead { display: none; }
   /* One separator between stacked rows — the same 1px --line as desktop
-     row borders — not under every field inside a row. */
+     row borders — not under every field inside a row. The base rule
+     (th, td { border-bottom }) must be explicitly turned off here or
+     every field keeps its line and the row border doubles up. */
+  tr { border-bottom: none; }
+  td { border-bottom: none; }
   tr + tr { border-top: 1px solid var(--line); }
   td {
     padding: .45rem 0;
