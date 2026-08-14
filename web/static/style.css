@@ -103,7 +103,10 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 .copyable { cursor: copy; }
-.copyable:hover { text-decoration: underline dotted; }
+/* No text-decoration here: it propagates into the mobile data-label
+   pseudo-element (which can't cancel it), so hover signal is a tint
+   instead — the whole cell lights up, label stays untouched. */
+.copyable:hover { background: #f1f5fd; }
 .copyable.copied { position: relative; }
 .copyable.copied::after {
   content: "copied ✓";
