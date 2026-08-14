@@ -8,6 +8,7 @@ const (
 	LinkRevoked        = "revoked"
 	LinkError          = "error"
 	LinkClosed         = "closed"
+	LinkRemoved        = "removed"
 )
 
 // BankLink is one Enable Banking consent session per user per bank.

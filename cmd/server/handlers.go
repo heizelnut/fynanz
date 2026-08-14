@@ -60,6 +60,7 @@ func newServer(st *store.Store, svc *sync.Service, cfg Config) http.Handler {
 	r.Get("/links/sync", h.syncAll)
 	r.Get("/links/{linkID}/sync", h.syncOne)
 	r.Get("/links/{linkID}/reconnect", h.reconnectLink)
+	r.Post("/links/{linkID}/remove", h.removeLink)
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
@@ -895,6 +896,22 @@ func (h *handlers) categoriesMerge(w http.ResponseWriter, r *http.Request) {
 
 // reconnectLink restarts the consent flow for a link (row reused, see
 // sync.Service.Reconnect).
+// removeLink disconnects a bank: synced data stays by default (row marked
+// removed, re-connect reattaches); the purge checkbox deletes it all.
+func (h *handlers) removeLink(w http.ResponseWriter, r *http.Request) {
+	id := strID(chi.URLParam(r, "linkID"))
+	purge := r.FormValue("purge") == "on"
+	if err := h.svc.RemoveLink(r.Context(), id, purge); err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	msg := "bank+link+removed"
+	if purge {
+		msg = "bank+link+removed,+data+purged"
+	}
+	http.Redirect(w, r, "/?msg="+msg, http.StatusSeeOther)
+}
+
 func (h *handlers) reconnectLink(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "linkID"), 10, 64)
 	if err != nil {

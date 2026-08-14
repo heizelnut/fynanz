@@ -240,6 +240,15 @@ func (c *Client) GetApplication(ctx context.Context) (*GetApplicationResponse, e
 	return &out, nil
 }
 
+// DeleteSession revokes a consent session at the bank/aggregator side
+// (DELETE /sessions/{id}), used when removing a bank link.
+func (c *Client) DeleteSession(ctx context.Context, sessionID string) error {
+	if _, err := c.do(ctx, http.MethodDelete, "/sessions/"+url.PathEscape(sessionID), nil, nil); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ListASPSPs returns banks available for the given country (used to resolve
 // ASPSP names and consent validity limits).
 func (c *Client) ListASPSPs(ctx context.Context, country string) ([]ASPSPData, error) {

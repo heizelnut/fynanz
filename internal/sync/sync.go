@@ -55,6 +55,33 @@ func (s *Service) notifyEvent(ctx context.Context, p notify.Payload) {
 	_ = s.notifier.Notify(context.WithoutCancel(ctx), p)
 }
 
+// RemoveLink disconnects a bank. purge=false keeps all synced data (the row
+// is marked removed; a later connect reattaches the same accounts);
+// purge=true deletes the link, its accounts and their transactions. The
+// PSD2 session is revoked remotely best-effort.
+func (s *Service) RemoveLink(ctx context.Context, linkID int64, purge bool) error {
+	userID, err := s.store.EnsureDefaultUser(ctx)
+	if err != nil {
+		return err
+	}
+	link, err := s.store.GetLink(ctx, linkID, userID)
+	if err != nil {
+		return err
+	}
+	if link == nil {
+		return fmt.Errorf("sync: no link %d", linkID)
+	}
+	if purge {
+		return s.store.PurgeLink(ctx, userID, linkID)
+	}
+	if link.SessionID != "" {
+		// Remote revoke is best-effort: session may already have expired.
+		_ = s.client.DeleteSession(ctx, link.SessionID)
+	}
+	s.rec.SetAccounts(link.Bank, 0)
+	return s.store.MarkLinkRemoved(ctx, userID, linkID)
+}
+
 // ActiveLinks returns the user's currently authorized links (scheduler / UI).
 func (s *Service) ActiveLinks(ctx context.Context) ([]store.BankLink, error) {
 	userID, err := s.store.EnsureDefaultUser(ctx)

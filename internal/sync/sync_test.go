@@ -411,6 +411,54 @@ func TestASPSPResolution(t *testing.T) {
 	_ = st
 }
 
+// TestRemoveLink: soft removal keeps data and hides the link; purge deletes
+// the transactions, accounts and the link row itself.
+func TestRemoveLink(t *testing.T) {
+	svc, st := newTestService(t, fixtureEB())
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+	link, _, err := svc.StartLink(ctx, "sandbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CompleteLink(ctx, link.State, "code-123"); err != nil {
+		t.Fatal(err)
+	}
+	txBefore, _ := st.CountTransactions(ctx, uid, store.TxFilter{})
+
+	// Soft remove: session revoked (fake DELETE /sessions), data kept, link hidden.
+	if err := svc.RemoveLink(ctx, link.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := st.GetLink(ctx, link.ID, uid)
+	if got.Status != store.LinkRemoved {
+		t.Errorf("status = %q, want removed", got.Status)
+	}
+	if n, _ := st.CountTransactions(ctx, uid, store.TxFilter{}); n != txBefore {
+		t.Errorf("soft remove deleted %d transactions, want %d kept", n, txBefore)
+	}
+	if links, _ := st.ListLinks(ctx, uid); len(links) != 0 {
+		t.Errorf("removed link still listed: %+v", links)
+	}
+	if active, _ := st.ActiveLinks(ctx, uid); len(active) != 0 {
+		t.Error("removed link still active")
+	}
+
+	// Purge: everything gone.
+	if err := svc.RemoveLink(ctx, link.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := st.CountTransactions(ctx, uid, store.TxFilter{}); n != 0 {
+		t.Errorf("purge left %d transactions", n)
+	}
+	if accs, _ := st.ListAccounts(ctx, uid); len(accs) != 0 {
+		t.Errorf("purge left %d accounts", len(accs))
+	}
+	if ghost, _ := st.GetLink(ctx, link.ID, uid); ghost != nil {
+		t.Error("purge left the link row")
+	}
+}
+
 func TestSyncAllSkipsNonActiveLinks(t *testing.T) {
 	svc, _ := newTestService(t, fixtureEB())
 	ctx := context.Background()

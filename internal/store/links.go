@@ -83,8 +83,10 @@ func (s *Store) GetLinkByBank(ctx context.Context, userID int64, bank string) (*
 }
 
 func (s *Store) ListLinks(ctx context.Context, userID int64) ([]BankLink, error) {
+	// Removed links are hidden from the dashboard (Re-connect / Connect
+	// resurrect the row via GetLinkByBank).
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+linkCols+` FROM bank_links WHERE user_id = ? ORDER BY id`, userID)
+		`SELECT `+linkCols+` FROM bank_links WHERE user_id = ? AND status != ? ORDER BY id`, userID, LinkRemoved)
 	if err != nil {
 		return nil, fmt.Errorf("store: list links: %w", err)
 	}
@@ -148,6 +150,44 @@ func (s *Store) ResetLinkPending(ctx context.Context, id int64, state string) er
 			updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
 		 WHERE id = ?`,
 		LinkPendingConsent, state, id)
+}
+
+// MarkLinkRemoved soft-removes a link: hidden from the list and skipped by
+// sync, but its row, accounts and transactions survive — a later
+// Re-connect/Connect reuses the row and reattaches everything.
+func (s *Store) MarkLinkRemoved(ctx context.Context, userID, id int64) error {
+	return s.exec(ctx,
+		`UPDATE bank_links SET status = ?, session_id = '', authorization_id = '',
+			state = '', valid_until = '', last_error = '',
+			updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+		 WHERE id = ? AND user_id = ?`,
+		LinkRemoved, id, userID)
+}
+
+// PurgeLink hard-deletes a link and everything that came with it: its
+// accounts and their transactions (cascade order: transactions → accounts →
+// link).
+func (s *Store) PurgeLink(ctx context.Context, userID, id int64) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	steps := []string{
+		`DELETE FROM transactions WHERE account_id IN
+			(SELECT id FROM accounts WHERE user_id = ? AND bank_link_id = ?)`,
+		`DELETE FROM accounts WHERE user_id = ? AND bank_link_id = ?`,
+		`DELETE FROM bank_links WHERE id = ? AND user_id = ?`,
+	}
+	for _, q := range steps {
+		if _, err := tx.ExecContext(ctx, q, userID, id); err != nil {
+			return fmt.Errorf("store: purge link %d: %w", id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: purge commit: %w", err)
+	}
+	return nil
 }
 
 // TouchLinkSync records that a sync run completed for the link.

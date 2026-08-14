@@ -256,6 +256,18 @@ button { background: var(--accent); color: #fff; border-color: var(--accent); cu
 button:hover { filter: brightness(1.08); }
 button.danger { background: transparent; color: var(--err); border-color: var(--err); }
 .actions a { color: var(--accent); text-decoration: none; margin-left: .4rem; font-size: .85rem; }
+.link-remove { display: inline-flex; align-items: center; margin-left: .6rem; gap: .3rem; }
+.link-remove label { font-size: .8rem; }
+button.linkbtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: .85rem;
+  color: var(--err);
+  cursor: pointer;
+  text-decoration: underline;
+}
 .badge-count[hidden] { display: none; }
 .badge-count {
   display: inline-block;

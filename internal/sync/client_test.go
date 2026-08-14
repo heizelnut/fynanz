@@ -75,6 +75,9 @@ func (f *fakeEB) handler() http.Handler {
 		}
 
 		switch {
+		case r.Method == http.MethodDelete && r.URL.Path == "/sessions/sesh-1":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"message":"OK"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/aspsps":
 			if f.aspsps == nil {
 				f.aspsps = []ASPSPData{{Name: "Mock ASPSP", Country: "FI"}}

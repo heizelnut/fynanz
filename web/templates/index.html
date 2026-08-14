@@ -31,6 +31,11 @@
           {{if eq .Status "active"}}<a href="/links/{{.ID}}/sync">Sync now</a>{{end}}
           {{if eq .Status "active"}}
           {{else}}<a href="/links/{{.ID}}/reconnect">Re-connect</a>{{end}}
+          <form class="inline-form link-remove" method="post" action="/links/{{.ID}}/remove"
+            onsubmit="return confirm('Remove this link?\n\nUnchecked: synced data stays (re-connect restores the bank).\nChecked: transactions + accounts are deleted.')">
+            <label class="muted"><input type="checkbox" name="purge"> purge</label>
+            <button class="linkbtn danger" title="Remove bank link">Remove</button>
+          </form>
         </td>
       </tr>
       {{end}}
