@@ -150,11 +150,13 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
     min-width: 6.5em;
     margin-right: .5rem;
     font-weight: 600;
-    font-size: .78rem;
+    /* Same size as the cell text: a smaller label + vertical-align: top was
+       sitting above the value's glyphs instead of on its baseline. */
+    font-size: inherit;
     text-transform: uppercase;
     letter-spacing: .03em;
     color: var(--muted);
-    vertical-align: top;
+    vertical-align: baseline;
   }
   /* Long free-text values: label on top, value below. `.wrap` marks exactly
      those cells (merchant, details, error); everything else (dates,
