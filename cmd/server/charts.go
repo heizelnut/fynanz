@@ -57,6 +57,25 @@ type lineSeries struct {
 	Class  string // bal-0, bal-1… (stroke colors in CSS)
 }
 
+// balChartJSON is what the crosshair cursor consumes (server-emitted, so the
+// client never re-implements scaling logic).
+type balChartJSON struct {
+	Currency string          `json:"currency"`
+	Min      int64           `json:"min"`
+	Max      int64           `json:"max"`
+	Series   []balSeriesJSON `json:"series"`
+}
+
+type balSeriesJSON struct {
+	Label  string         `json:"label"`
+	Points []balPointJSON `json:"points"`
+}
+
+type balPointJSON struct {
+	Date  string `json:"date"`
+	Minor int64  `json:"minor"`
+}
+
 // balanceChart is the fully prepared SVG description.
 type balanceChart struct {
 	Min, Max int64

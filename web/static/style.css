@@ -220,12 +220,42 @@ td.wrap {
 .sw.in { background: var(--ok); }
 .sw.out { background: var(--err); }
 
+/* Plot spans the full panel: no max-height (it letterboxed and centered the
+   content), viewBox is 1200x200 so desktop panels stay proportioned. */
+.balance-wrap { position: relative; }
 svg.balance {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 220px;
+  cursor: crosshair;
 }
+.crosshair { pointer-events: none; }
+.crosshair line {
+  stroke: var(--fg);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  opacity: .65;
+}
+.crosshair circle { fill: var(--fg); stroke: var(--surface); stroke-width: 2; }
+.cursor-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .35rem .6rem;
+  font-size: .78rem;
+  line-height: 1.4;
+  z-index: 5;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+.cursor-label .cl-date { color: var(--muted); }
+.cursor-label .cl-row { display: flex; gap: .5rem; align-items: baseline; }
+.cursor-label .cl-sw { width: .7em; height: .7em; border-radius: 50%; display: inline-block; }
+.cursor-label .cl-amt { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-left: auto; }
 .bal { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .bal.bal-0 { stroke: var(--accent); }
 .bal.bal-1 { stroke: var(--ok); }

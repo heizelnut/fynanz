@@ -49,12 +49,12 @@ func TestDeriveBalanceSeries(t *testing.T) {
 
 func TestSvgPointsScales(t *testing.T) {
 	pts := []balancePoint{{Date: "a", Minor: 0}, {Date: "b", Minor: 100}}
-	s := svgPoints(pts, 0, 100, 600, 200)
-	if !strings.HasPrefix(s, "10.0,") || !strings.HasSuffix(s, "590.0,10.0") {
+	s := svgPoints(pts, 0, 100, 1200, 200)
+	if !strings.HasPrefix(s, "10.0,") || !strings.HasSuffix(s, "1190.0,10.0") {
 		t.Errorf("scaled points wrong: %q", s)
 	}
 	// Flat series lands mid-height and doesn't divide by zero.
-	flat := svgPoints([]balancePoint{{Minor: 5}, {Minor: 5}}, 5, 5, 600, 200)
+	flat := svgPoints([]balancePoint{{Minor: 5}, {Minor: 5}}, 5, 5, 1200, 200)
 	if !strings.Contains(flat, "100.0") {
 		t.Errorf("flat series should sit mid-height: %q", flat)
 	}

@@ -43,6 +43,11 @@ func (h *handlers) loadTemplates() error {
 		"fmtDate":       fmtDate,
 		"accountName":   h.accountName,
 		"eventsSummary": eventsSummary,
+		"jsJSON": func(v string) template.JS {
+			// Emit JSON verbatim inside <script type="application/json">
+			// (html/template would otherwise escape it as a JS string).
+			return template.JS(v)
+		},
 	}
 	h.pages = make(map[string]*template.Template, len(pageFiles))
 	for _, page := range pageFiles {

@@ -87,9 +87,14 @@
   <div class="panel span2">
     <h2>Balance trend <span class="muted">derived from daily transactions</span></h2>
     {{if .Dashboard.Balance.Series}}
-    <svg class="balance" viewBox="0 0 600 200" role="img" aria-label="balance trend">
-      {{range .Dashboard.Balance.Series}}<polyline class="bal {{.Class}}" points="{{.Points}}"></polyline>{{end}}
-    </svg>
+    <script type="application/json" id="balance-data">{{jsJSON .Dashboard.BalanceJSON}}</script>
+    <div class="balance-wrap">
+      <svg class="balance" viewBox="0 0 1200 200" role="img" aria-label="balance trend">
+        <g class="crosshair" hidden></g>
+        {{range .Dashboard.Balance.Series}}<polyline class="bal {{.Class}}" points="{{.Points}}"></polyline>{{end}}
+      </svg>
+      <div class="cursor-label" hidden></div>
+    </div>
     <div class="legend muted">
       {{range .Dashboard.Balance.Series}}<span class="sw {{.Class}}"></span> {{.Label}}{{end}}
       · min {{fmtAmount .Dashboard.Balance.Min .Dashboard.Currency}} / max {{fmtAmount .Dashboard.Balance.Max .Dashboard.Currency}}

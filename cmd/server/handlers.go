@@ -95,12 +95,13 @@ type pageData struct {
 // dashboardData is everything the insights panels need (milestone 7); empty
 // HasData=false renders the "sync to see insights" hint.
 type dashboardData struct {
-	HasData  bool
-	Currency string
-	Since    string // balance series starts here (derived, not bank-reported)
-	CatSpend []catSpendRow
-	Flows    []monthFlowRow
-	Balance  balanceChart
+	HasData     bool
+	Currency    string
+	Since       string // balance series starts here (derived, not bank-reported)
+	CatSpend    []catSpendRow
+	Flows       []monthFlowRow
+	Balance     balanceChart
+	BalanceJSON string // crosshair data (see balChartJSON)
 }
 
 // pagination describes one page of a transaction listing.
@@ -281,12 +282,23 @@ func (h *handlers) dashboard(ctx context.Context) (dashboardData, error) {
 			}
 		}
 		series := make([]lineSeries, 0, len(raw))
+		js := balChartJSON{Currency: cur, Min: min, Max: maxV, Series: make([]balSeriesJSON, 0, len(raw))}
 		for i, rs := range raw {
 			series = append(series, lineSeries{
 				Label:  rs.label,
-				Points: svgPoints(rs.pts, min, maxV, 600, 200),
+				Points: svgPoints(rs.pts, min, maxV, 1200, 200),
 				Class:  fmt.Sprintf("bal-%d", i),
 			})
+			pts := make([]balPointJSON, 0, len(rs.pts))
+			for _, p := range rs.pts {
+				pts = append(pts, balPointJSON(p))
+			}
+			js.Series = append(js.Series, balSeriesJSON{Label: rs.label, Points: pts})
+		}
+		if rawJSON, err := json.Marshal(js); err == nil {
+			// json.Marshal does not escape "</script>"; bank-supplied strings
+			// must not be able to break out of the script block.
+			d.BalanceJSON = strings.ReplaceAll(string(rawJSON), "</", "<\\/")
 		}
 		d.Balance = buildBalanceChart(series, min, maxV, nil)
 	}
