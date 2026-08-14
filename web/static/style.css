@@ -69,6 +69,23 @@ body {
 .brand { font-weight: 700; color: var(--fg); text-decoration: none; font-size: 1.1rem; }
 .topbar nav a { color: var(--muted); text-decoration: none; margin-right: .9rem; }
 .topbar nav a:hover { color: var(--accent); }
+/* Active page: a dot under the label. Anchored to the VISIBLE span (full
+   name on desktop, mono code on mobile) — its box is exactly the text, so
+   the dot stays centred even next to the inbox count badge. */
+.nav-full { display: inline-block; }
+.topbar nav a.active { color: var(--fg); }
+.topbar nav a.active .nav-full, .topbar nav a.active .nav-short { position: relative; }
+.topbar nav a.active .nav-full::after, .topbar nav a.active .nav-short::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -.62rem;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
 /* The 2-letter nav codes only exist on small screens (base.html renders
    both; desktop hides the code, mobile hides the full name). */
 .nav-short { display: none; }
@@ -289,7 +306,7 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
   .topbar { gap: .8rem; }
   .topbar nav { margin: 0 .9rem; }
   .nav-full { display: none; }
-  .nav-short { display: inline; }
+  .nav-short { display: inline-block; }
 
   table, thead, tbody, tr, td { display: block; }
   thead { display: none; }

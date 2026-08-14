@@ -61,6 +61,7 @@ func newServer(st *store.Store, svc *sync.Service) http.Handler {
 
 type pageData struct {
 	Title          string
+	ActiveNav      string // which nav item shows the active dot ("dashboard", ...)
 	Message        string
 	Error          string
 	Links          []store.BankLink
@@ -188,6 +189,7 @@ func (h *handlers) index(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Dashboard = dash
+	data.ActiveNav = "dashboard"
 	h.render(w, "index.html", data)
 }
 
@@ -291,6 +293,7 @@ func (h *handlers) transactions(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	data.ActiveNav = "transactions"
 	h.render(w, "transactions.html", data)
 }
 
@@ -364,6 +367,7 @@ func (h *handlers) inbox(w http.ResponseWriter, r *http.Request) {
 	}
 	d := inboxPageData{pageData: data, ResolvedCategory: r.URL.Query().Get("done")}
 	d.Uncategorized = items
+	d.ActiveNav = "inbox"
 	h.render(w, "inbox.html", d)
 }
 
@@ -510,6 +514,7 @@ func (h *handlers) categories(w http.ResponseWriter, r *http.Request) {
 	for _, c := range data.Categories {
 		cc = append(cc, catCount{ID: c.ID, Name: c.Name, Count: counts[c.ID]})
 	}
+	data.ActiveNav = "categories"
 	h.render(w, "categories.html", categoryPageData{pageData: data, CatTxCounts: cc})
 }
 
@@ -532,6 +537,7 @@ func (h *handlers) settings(w http.ResponseWriter, r *http.Request) {
 		pageData: data,
 		Channels: ch,
 	}
+	settingsData.ActiveNav = "settings"
 	h.render(w, "settings.html", settingsData)
 }
 

@@ -12,11 +12,11 @@
   <header class="topbar">
     <a class="brand" href="/">fynanz</a>
     <nav>
-      <a href="/"><span class="nav-full">Dashboard</span><span class="nav-short mono">Db</span></a>
-      <a href="/transactions"><span class="nav-full">Transactions</span><span class="nav-short mono">Tx</span></a>
-      <a href="/inbox"><span class="nav-full">Inbox</span><span class="nav-short mono">Ib</span>{{if .UncategorizedN}} <span class="badge-count" id="uncat-badge">{{.UncategorizedN}}</span>{{end}}</a>
-      <a href="/categories"><span class="nav-full">Categories</span><span class="nav-short mono">Ct</span></a>
-      <a href="/settings"><span class="nav-full">Settings</span><span class="nav-short mono">St</span></a>
+      <a href="/" {{if eq .ActiveNav "dashboard"}}class="active"{{end}}><span class="nav-full">Dashboard</span><span class="nav-short mono">Db</span></a>
+      <a href="/transactions" {{if eq .ActiveNav "transactions"}}class="active"{{end}}><span class="nav-full">Transactions</span><span class="nav-short mono">Tx</span></a>
+      <a href="/inbox" {{if eq .ActiveNav "inbox"}}class="active"{{end}}><span class="nav-full">Inbox</span><span class="nav-short mono">Ib</span>{{if .UncategorizedN}} <span class="badge-count" id="uncat-badge">{{.UncategorizedN}}</span>{{end}}</a>
+      <a href="/categories" {{if eq .ActiveNav "categories"}}class="active"{{end}}><span class="nav-full">Categories</span><span class="nav-short mono">Ct</span></a>
+      <a href="/settings" {{if eq .ActiveNav "settings"}}class="active"{{end}}><span class="nav-full">Settings</span><span class="nav-short mono">St</span></a>
     </nav>
     <span class="count">{{.TxCount}} tx</span>
   </header>
