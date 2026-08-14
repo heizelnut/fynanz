@@ -157,6 +157,7 @@ type GetASPSPsResponse struct {
 type ASPSPData struct {
 	Name               string       `json:"name"`
 	Country            string       `json:"country"`
+	PSUTypes           []string     `json:"psu_types,omitempty"`
 	Sandbox            *SandboxInfo `json:"sandbox,omitempty"`
 	MaxConsentValidity *int64       `json:"maximum_consent_validity,omitempty"`
 }

@@ -64,8 +64,41 @@ func (s *Service) ActiveLinks(ctx context.Context) ([]store.BankLink, error) {
 	return s.store.ActiveLinks(ctx, userID)
 }
 
-// aspspFor returns the ASPSP (name, country) defaults for a link's bank key
-// (v1: sandbox/revolut/mediolanum; any other key is passed through).
+// resolveASPSP returns the authoritative (name, country, consent-cap) for a
+// bank key from the live /aspsps list (names differ per environment — sandbox
+// shows only Mock ASPSP, production shows real banks). Falls back to
+// curated defaults when the list is unreachable or the bank isn't in it.
+func (s *Service) resolveASPSP(ctx context.Context, bank string) (name, country string, maxConsentSecs *int64) {
+	name, country = aspspFor(bank)
+	list, err := s.client.ListASPSPs(ctx, country)
+	if err != nil {
+		return name, country, nil
+	}
+	needle := strings.ToLower(strings.TrimSpace(bank))
+	for _, a := range list {
+		if strings.ToLower(strings.TrimSpace(a.Name)) == needle ||
+			strings.Contains(strings.ToLower(a.Name), needle) {
+			return a.Name, a.Country, a.MaxConsentValidity
+		}
+	}
+	return name, country, nil
+}
+
+// consentValidity caps the requested consent at the bank's own maximum
+// (the API rejects values beyond now + maximum_consent_validity) and at the
+// configured default.
+func (s *Service) consentValidity(bankMaxSecs *int64) time.Duration {
+	capD := time.Duration(s.maxConsentDays) * 24 * time.Hour
+	if bankMaxSecs != nil && *bankMaxSecs > 0 {
+		if bank := time.Duration(*bankMaxSecs) * time.Second; bank < capD {
+			capD = bank
+		}
+	}
+	return capD
+}
+
+// aspspFor returns the default (name, country) guesses for a link's bank key
+// (used as fallback when the /aspsps list is unreachable).
 func aspspFor(bank string) (name, country string) {
 	switch bank {
 	case "sandbox":
@@ -86,13 +119,13 @@ func (s *Service) StartLink(ctx context.Context, bank string) (*store.BankLink, 
 	if err != nil {
 		return nil, "", err
 	}
-	name, country := aspspFor(bank)
+	name, country, maxSecs := s.resolveASPSP(ctx, bank)
 	link, err := s.store.CreateLink(ctx, userID, bank, name, country)
 	if err != nil {
 		return nil, "", err
 	}
 
-	validUntil := time.Now().UTC().Add(time.Duration(s.maxConsentDays) * 24 * time.Hour).
+	validUntil := time.Now().UTC().Add(s.consentValidity(maxSecs)).
 		Format("2006-01-02T15:04:05.000000-07:00")
 	req := StartAuthorizationRequest{
 		Access:      Access{ValidUntil: validUntil},

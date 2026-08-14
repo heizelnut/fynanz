@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"fynanz/internal/metrics"
 	"fynanz/internal/notify"
@@ -362,6 +363,52 @@ func TestRuleAndTransferClassification(t *testing.T) {
 	if n, _ := st.UncategorizedCount(ctx, uid); n != 0 {
 		t.Errorf("uncategorized after resolution = %d, want 0", n)
 	}
+}
+
+// TestASPSPResolution: StartLink must take the bank's (name, country) from
+// the live /aspsps list, not the hardcoded defaults (which differ per
+// environment), and cap the requested consent at the bank's maximum.
+func TestASPSPResolution(t *testing.T) {
+	f := fixtureEB()
+	maxConsent := int64(90 * 86400) // 90 days
+	f.aspsps = []ASPSPData{
+		{Name: "Revolut", Country: "LT", PSUTypes: []string{"personal"}, MaxConsentValidity: &maxConsent},
+		{Name: "Mock ASPSP", Country: "FI", MaxConsentValidity: &maxConsent},
+	}
+	svc, st := newTestService(t, f)
+	ctx := context.Background()
+
+	link, _, err := svc.StartLink(ctx, "revolut")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link.AspspName != "Revolut" || link.AspspCountry != "LT" {
+		t.Errorf("aspsp not resolved from /aspsps: %+v", link)
+	}
+	f.mu.Lock()
+	req := f.lastAuthReq
+	f.mu.Unlock()
+	if req.Aspsp.Name != "Revolut" {
+		t.Errorf("auth sent to %q, want Revolut", req.Aspsp.Name)
+	}
+	until, err := time.Parse("2006-01-02T15:04:05.999999999-07:00", req.Access.ValidUntil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	capD := time.Duration(maxConsent) * time.Second
+	if d := time.Until(until); d > capD || d <= 0 {
+		t.Errorf("consent validity %v not capped at bank max %v", d, capD)
+	}
+
+	// Fallback: unknown bank key keeps defaults (still resolvable).
+	link2, _, err := svc.StartLink(ctx, "sandbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if link2.AspspName != "Mock ASPSP" {
+		t.Errorf("sandbox fallback wrong: %+v", link2)
+	}
+	_ = st
 }
 
 func TestSyncAllSkipsNonActiveLinks(t *testing.T) {

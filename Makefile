@@ -1,7 +1,11 @@
 # fynanz dev workflow. Requires: go, air, golang-migrate, golangci-lint.
 DB_PATH ?= ./data/fynanz.db
 
-.PHONY: dev build test lint creds docker-up docker-down migrate-up migrate-down migrate-create fmt
+.PHONY: dev build test lint creds aspsps docker-up docker-down migrate-up migrate-down migrate-create fmt
+
+## aspsps: list banks the API exposes for a country (authoritative names)
+aspsps:
+	go run ./cmd/aspsps $(ARGS)
 
 ## docker-up: build and start the container (needs .env, see README)
 docker-up:

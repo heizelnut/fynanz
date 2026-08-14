@@ -30,6 +30,8 @@ type fakeEB struct {
 	sessionErr  *APIError     // when set, GET /sessions/{id} fails with it
 	txnCalls    int           // transaction fetches so far
 	txnsAfter   []Transaction // served instead of paging after the first fetch
+	aspsps      []ASPSPData   // served for GET /aspsps
+	lastAuthReq StartAuthorizationRequest
 }
 
 // setSessionErr toggles the session failure for GET /sessions/{id}
@@ -67,6 +69,11 @@ func (f *fakeEB) handler() http.Handler {
 		}
 
 		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/aspsps":
+			if f.aspsps == nil {
+				f.aspsps = []ASPSPData{{Name: "Mock ASPSP", Country: "FI"}}
+			}
+			writeJSON(w, GetASPSPsResponse{ASPSPs: f.aspsps})
 		case r.Method == http.MethodPost && r.URL.Path == "/auth":
 			var req StartAuthorizationRequest
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -75,6 +82,9 @@ func (f *fakeEB) handler() http.Handler {
 			if req.Aspsp.Name == "" || req.State == "" || req.RedirectURL == "" {
 				f.t.Errorf("incomplete /auth request: %+v", req)
 			}
+			f.mu.Lock()
+			f.lastAuthReq = req
+			f.mu.Unlock()
 			writeJSON(w, StartAuthorizationResponse{URL: f.authURL, AuthorizationID: "authid-1"})
 		case r.Method == http.MethodPost && r.URL.Path == "/sessions":
 			var req AuthorizeSessionRequest
