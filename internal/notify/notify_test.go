@@ -37,8 +37,11 @@ func TestNtfySender(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	if gotURL != "/mytopic" {
-		t.Errorf("posted to %q, want /mytopic", gotURL)
+	if gotURL != "/" {
+		t.Errorf("posted to %q, want the server root (topic goes in the JSON body)", gotURL)
+	}
+	if !strings.Contains(gotBody, `"topic":"mytopic"`) {
+		t.Errorf("body missing topic field: %s", gotBody)
 	}
 	if gotAuth != "Bearer tok" {
 		t.Errorf("auth = %q", gotAuth)

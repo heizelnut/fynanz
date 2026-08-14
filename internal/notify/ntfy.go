@@ -38,6 +38,7 @@ func (s *ntfySender) Name() string { return "ntfy" }
 
 func (s *ntfySender) Send(ctx context.Context, p Payload) error {
 	body := map[string]any{
+		"topic":   s.cfg.Topic,
 		"title":   p.Title,
 		"message": p.Message,
 		"tags":    []string{"money"},
@@ -52,8 +53,11 @@ func (s *ntfySender) Send(ctx context.Context, p Payload) error {
 	if err != nil {
 		return err
 	}
+	// Publish to the SERVER ROOT with the topic in the JSON body: posting to
+	// /{topic} makes ntfy store the whole JSON as the plain message (verified
+	// against ntfy.sh) instead of parsing the fields.
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		s.cfg.URL+"/"+s.cfg.Topic, bytes.NewReader(raw))
+		s.cfg.URL, bytes.NewReader(raw))
 	if err != nil {
 		return err
 	}
