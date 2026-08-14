@@ -47,6 +47,7 @@ func main() {
 	// provide them (previously a startup fatal).
 	client := sync.NewDynamicClient(bankResolve(st, cfg))
 	notifier := notify.NewDispatcher(buildNotifyLoader(st))
+	metrics.RegisterFinanceCollector(st)
 	redirectURL := cfg.PublicBaseURL + "/links/callback"
 	svc := sync.NewService(st, client, metrics.Recorder{}, notifier, cfg.PublicBaseURL,
 		redirectURL, cfg.PSUType, cfg.HistoryDays, cfg.MaxConsentDays)

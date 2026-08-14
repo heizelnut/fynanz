@@ -121,3 +121,65 @@ func (s *Store) PrimaryCurrency(ctx context.Context, userID int64) (string, erro
 	}
 	return cur, nil
 }
+
+// IncomeByCategory mirrors SpendByCategory for credits (amount_minor > 0),
+// grouped per category for the finance metrics.
+func (s *Store) IncomeByCategory(ctx context.Context, userID int64, currency, dateFrom string) ([]CategorySpend, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT COALESCE(c.id, 0), COALESCE(c.name, 'Uncategorized'), SUM(t.amount_minor)
+		FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
+		WHERE t.user_id = ? AND t.currency = ? AND t.internal_transfer = 0
+		  AND t.amount_minor > 0 AND t.booking_date >= ? AND t.booking_date != ''
+		GROUP BY c.id
+		ORDER BY SUM(t.amount_minor) DESC`, userID, currency, dateFrom)
+	if err != nil {
+		return nil, fmt.Errorf("store: income by category: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []CategorySpend
+	for rows.Next() {
+		var cs CategorySpend
+		if err := rows.Scan(&cs.CategoryID, &cs.Name, &cs.TotalMinor); err != nil {
+			return nil, err
+		}
+		cs.IsUncategorized = cs.CategoryID == 0
+		out = append(out, cs)
+	}
+	return out, rows.Err()
+}
+
+// CurrencyCount is a transaction-count/currency pair.
+type CurrencyCount struct {
+	Currency string
+	N        int64
+}
+
+// CountByCurrency returns transaction counts per currency, most common first.
+func (s *Store) CountByCurrency(ctx context.Context, userID int64) ([]CurrencyCount, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT currency, COUNT(*) FROM transactions WHERE user_id = ?
+		 GROUP BY currency ORDER BY COUNT(*) DESC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("store: count by currency: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []CurrencyCount
+	for rows.Next() {
+		var c CurrencyCount
+		if err := rows.Scan(&c.Currency, &c.N); err != nil {
+			return nil, err
+		}
+		out = append(out, c)
+	}
+	return out, rows.Err()
+}
+
+// CountRules returns the number of categorization rules.
+func (s *Store) CountRules(ctx context.Context, userID int64) (int64, error) {
+	var n int64
+	err := s.queryRow(ctx, `SELECT COUNT(*) FROM rules WHERE user_id = ?`, userID).Scan(&n)
+	if n == 0 && err != nil {
+		return 0, err
+	}
+	return n, nil
+}

@@ -98,8 +98,15 @@ Tailscale and front it with Traefik (DNS-01 TLS).
 - **Re-auth**: consent sessions expire (PSD2); the link badge turns red and a
   notification fires. One tap re-opens the consent flow.
 - **Metrics**: `<base>/metrics` (Prometheus text format) — sync runs and
-  outcomes, transactions ingested, uncategorized count, notification
-  send/fail counts. Scrape example:
+  outcomes, uncategorized count, notification send/fail counts, plus a
+  scrape-computed finance snapshot: current-month income/expense per
+  category (`fynanz_finance_expenses{category,currency}` /
+  `fynanz_finance_income{category,currency}`), month net
+  (`fynanz_finance_net`), per-account balances
+  (`fynanz_finance_balance`), stored transactions per currency and rule
+  count. Amounts are **minor units** (EUR: ×0.01); month-over-month
+  history stays in the dashboard (SQL), where it belongs — Prometheus is
+  for current state, not rolling per-category series. Scrape example:
 
   ```yaml
   - job_name: fynanz
