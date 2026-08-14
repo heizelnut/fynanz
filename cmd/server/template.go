@@ -43,6 +43,8 @@ func (h *handlers) loadTemplates() error {
 		"fmtDate":       fmtDate,
 		"accountName":   h.accountName,
 		"eventsSummary": eventsSummary,
+		"shortTS":       shortTS,
+		"eventLabel":    eventLabel,
 		"jsJSON": func(v string) template.JS {
 			// Emit JSON verbatim inside <script type="application/json">
 			// (html/template would otherwise escape it as a JS string).
@@ -126,6 +128,29 @@ func fmtDate(s string) string {
 		return s[:10]
 	}
 	return s
+}
+
+// shortTS renders "2026-08-14T18:20:31Z" as "2026-08-14 18:20".
+func shortTS(s string) string {
+	s = strings.Replace(s, "T", " ", 1)
+	if len(s) > 16 {
+		s = s[:16]
+	}
+	return s
+}
+
+// eventLabel maps notification events to compact labels for the history.
+func eventLabel(e string) string {
+	switch e {
+	case "needs_category":
+		return "new tx"
+	case "reauth_needed":
+		return "re-auth"
+	case "sync_failed":
+		return "sync failed"
+	default:
+		return e
+	}
 }
 
 // eventsSummary renders a channel's routing map as short human labels.

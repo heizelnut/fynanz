@@ -47,6 +47,18 @@ func main() {
 	// provide them (previously a startup fatal).
 	client := sync.NewDynamicClient(bankResolve(st, cfg))
 	notifier := notify.NewDispatcher(buildNotifyLoader(st))
+	recordHistory := func(a notify.Attempt) {
+		userID, err := st.EnsureDefaultUser(context.Background())
+		if err != nil {
+			return
+		}
+		_ = st.InsertNotificationEvent(context.Background(), store.NotificationEvent{
+			UserID: userID, ChannelID: a.ChannelID, ChannelType: a.ChannelType,
+			Event: string(a.Event), OK: a.OK, Error: a.Error,
+			Title: a.Title, Message: a.Message, Link: a.Link,
+		})
+	}
+	notifier.SetObserver(recordHistory)
 	metrics.RegisterFinanceCollector(st)
 	redirectURL := cfg.PublicBaseURL + "/links/callback"
 	svc := sync.NewService(st, client, metrics.Recorder{}, notifier, cfg.PublicBaseURL,
@@ -133,6 +145,7 @@ func buildNotifyLoader(st *store.Store) notify.Loader {
 				_ = json.Unmarshal([]byte(r.Events), &events)
 			}
 			out = append(out, notify.Config{
+				ID:      r.ID,
 				Type:    r.Type,
 				Config:  json.RawMessage(r.Config),
 				Events:  events,

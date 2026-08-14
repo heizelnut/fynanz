@@ -62,3 +62,71 @@ func (s *Store) DeleteNotificationChannel(ctx context.Context, userID, id int64)
 	}
 	return nil
 }
+
+// NotificationEvent is one send attempt (channel × payload) — the history
+// the Notifications tab shows.
+type NotificationEvent struct {
+	ID          int64
+	UserID      int64
+	ChannelID   int64
+	ChannelType string
+	Event       string
+	OK          bool
+	Error       string
+	Title       string
+	Message     string
+	Link        string
+	CreatedAt   string
+}
+
+// insertNotificationEventStmt is the shared insert (kept here to bound the
+// history: every insert also prunes beyond 500 rows per user).
+func (s *Store) InsertNotificationEvent(ctx context.Context, e NotificationEvent) error {
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO notification_events (user_id, channel_id, channel_type, event, ok, error, title, message, link)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.UserID, e.ChannelID, e.ChannelType, e.Event, e.OK, e.Error, e.Title, e.Message, e.Link); err != nil {
+		return fmt.Errorf("store: insert notification event: %w", err)
+	}
+	_, _ = s.db.ExecContext(ctx,
+		`DELETE FROM notification_events WHERE user_id = ? AND id NOT IN
+		 (SELECT id FROM notification_events WHERE user_id = ? ORDER BY id DESC LIMIT 500)`,
+		e.UserID, e.UserID)
+	return nil
+}
+
+const evCols = `id, user_id, channel_id, channel_type, event, ok, error, title, message, link, created_at`
+
+func scanEvent(row interface{ Scan(...any) error }) (NotificationEvent, error) {
+	var e NotificationEvent
+	err := row.Scan(&e.ID, &e.UserID, &e.ChannelID, &e.ChannelType, &e.Event, &e.OK,
+		&e.Error, &e.Title, &e.Message, &e.Link, &e.CreatedAt)
+	return e, err
+}
+
+// RecentNotificationEvents lists the newest attempts, paginated.
+func (s *Store) RecentNotificationEvents(ctx context.Context, userID int64, limit, offset int) ([]NotificationEvent, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+evCols+` FROM notification_events WHERE user_id = ?
+		 ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("store: recent notification events: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []NotificationEvent
+	for rows.Next() {
+		e, err := scanEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// CountNotificationEvents counts attempts (pagination total).
+func (s *Store) CountNotificationEvents(ctx context.Context, userID int64) (int64, error) {
+	var n int64
+	err := s.queryRow(ctx, `SELECT COUNT(*) FROM notification_events WHERE user_id = ?`, userID).Scan(&n)
+	return n, err
+}

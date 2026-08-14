@@ -87,9 +87,10 @@ Tailscale and front it with Traefik (DNS-01 TLS).
 - **Inbox**: every unrecognized transaction waits here; picking a category
   writes an exact-merchant rule. Pending items also drive the
   `needs_category` push notification.
-- **Notifications**: configure channels in **Settings** — ntfy (topic +
-  optional token) or webhook (plain JSON POST). Each channel routes events
-  independently (new tx / re-auth / sync failed).
+- **Notifications**: the Notifications tab on the dashboard configures
+  ntfy (topic + optional token) or webhook channels with per-event routing
+  (new tx / re-auth / sync failed) AND shows the send history — each
+  channel × event attempt, timestamped, with failures and error details.
 - **Enable Banking credentials**: also in **Settings** — paste the app id +
   private key for any environment (sandbox/production), click *Validate*
   (live check: identity, environment, callback registration), save. No env

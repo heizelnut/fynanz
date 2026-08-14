@@ -94,8 +94,9 @@ type pageData struct {
 	FilterFrom     string
 	FilterTo       string
 	FilterQ        string
-	PagerBase      string // "/transactions?limit=N&account=…" for page links
-	ExportQS       string // filter-only query string for the CSV export link
+	PagerBase      string                    // "/transactions?limit=N&account=…" for page links
+	ExportQS       string                    // filter-only query string for the CSV export link
+	Events         []store.NotificationEvent // notification history (Notifications tab)
 }
 
 // dashboardData is everything the insights panels need (milestone 7); empty
@@ -889,18 +890,44 @@ func (h *handlers) exportTransactions(w http.ResponseWriter, r *http.Request) {
 	cw.Flush()
 }
 
-// notifications renders the channel configuration page (§7).
+// notifications renders the channel configuration page (§7) plus the send
+// history (what was pushed, when, and whether it worked), paginated.
 func (h *handlers) notifications(w http.ResponseWriter, r *http.Request) {
-	data, err := h.page(r, "Notifications", 50, 1, store.TxFilter{})
+	limit, page := 30, 1
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+	ctx := r.Context()
+	total, err := h.store.CountNotificationEvents(ctx, defaultUserID)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	ch, err := h.store.ListNotificationChannels(r.Context(), defaultUserID)
+	evs, err := h.store.RecentNotificationEvents(ctx, defaultUserID, limit, (page-1)*limit)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
+	data, err := h.page(r, "Notifications", limit, page, store.TxFilter{})
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	ch, err := h.store.ListNotificationChannels(ctx, defaultUserID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	data.Pagination = makePagination(page, limit, total)
+	data.PagerBase = "/notifications?limit=" + strconv.Itoa(limit)
+	data.Events = evs
 	n := struct {
 		pageData
 		Channels []store.NotificationChannel

@@ -55,4 +55,39 @@
   <p class="muted">No channels yet — add one above (ntfy.sh works with a public topic, or point at a self-hosted instance).</p>
   {{end}}
 </section>
+
+<section class="panel">
+  <h2>History <span class="muted">recent sends</span></h2>
+  {{if .Events}}
+  <table>
+    <thead>
+      <tr><th>When</th><th>Event</th><th>Channel</th><th>Status</th><th>Title</th><th>Message / error</th></tr>
+    </thead>
+    <tbody>
+      {{range .Events}}
+      <tr>
+        <td class="muted" data-label="When">{{shortTS .CreatedAt}}</td>
+        <td data-label="Event"><span class="badge neutral">{{eventLabel .Event}}</span></td>
+        <td data-label="Channel">{{.ChannelType}}{{if .ChannelID}} · #{{.ChannelID}}{{end}}</td>
+        <td data-label="Status">{{if .OK}}<span class="ok-text">sent</span>{{else}}<span class="err-text">failed</span>{{end}}</td>
+        <td class="strong wrap" data-label="Title">{{.Title}}</td>
+        <td class="muted wrap" data-label="Details">{{if .OK}}{{.Message}}{{else}}<span class="err-text">{{.Error}}</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <div class="pager">
+    <span class="pager-info muted">{{if gt .Pagination.Total 0}}Showing {{.Pagination.From}}–{{.Pagination.To}} of {{.Pagination.Total}}{{end}}</span>
+    {{if gt .Pagination.TotalPages 1}}
+    <nav class="pager-nav">
+      {{if .Pagination.Prev}}<a href="{{.PagerBase}}&amp;page={{.Pagination.Prev}}">« Prev</a>{{else}}<span class="muted">« Prev</span>{{end}}
+      {{range $n := .Pagination.Pages}}{{if eq $n -1}}<span class="muted">…</span>{{else}}<a class="{{if eq $n $.Pagination.Current}}current{{end}}" href="{{$.PagerBase}}&amp;page={{$n}}">{{$n}}</a>{{end}}{{end}}
+      {{if .Pagination.Next}}<a href="{{.PagerBase}}&amp;page={{.Pagination.Next}}">Next »</a>{{else}}<span class="muted">Next »</span>{{end}}
+    </nav>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="muted">No sends recorded yet — events appear here as notifications go out (including failures).</p>
+  {{end}}
+</section>
 {{end}}

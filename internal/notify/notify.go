@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"fynanz/internal/metrics"
 )
@@ -41,11 +42,29 @@ type Notifier interface {
 
 // Config is one channel's persisted form (mirrors notification_channels).
 type Config struct {
+	ID      int64 // store row id — history ties attempts to their channel
 	Type    string
 	Config  json.RawMessage
 	Events  map[Event]bool // empty map means "all events"
 	Enabled bool
 }
+
+// Attempt describes one channel × payload send for history purposes.
+type Attempt struct {
+	ChannelID   int64
+	ChannelType string
+	Event       Event
+	OK          bool
+	Error       string
+	Title       string
+	Message     string
+	Link        string
+	Time        time.Time
+}
+
+// Observer receives every send attempt (the app records these as history;
+// observers must not throw).
+type Observer func(Attempt)
 
 // Loader supplies active channel configs (the app builds it from the store).
 type Loader func(ctx context.Context) ([]Config, error)
@@ -66,6 +85,7 @@ type Dispatcher struct {
 	load      Loader
 	factories map[string]Factory
 	rec       metrics.Recorder
+	observe   Observer
 }
 
 func NewDispatcher(load Loader) *Dispatcher {
@@ -77,6 +97,27 @@ func NewDispatcher(load Loader) *Dispatcher {
 			"webhook": WebhookFactory,
 		},
 	}
+}
+
+// SetObserver registers the history recorder (called once at startup).
+// Attempts are recorded for every channel, success or failure.
+func (d *Dispatcher) SetObserver(o Observer) { d.observe = o }
+
+func (d *Dispatcher) record(c Config, p Payload, ok bool, errMsg string) {
+	if d.observe == nil {
+		return
+	}
+	d.observe(Attempt{
+		ChannelID:   c.ID,
+		ChannelType: c.Type,
+		Event:       p.Event,
+		OK:          ok,
+		Error:       errMsg,
+		Title:       p.Title,
+		Message:     p.Message,
+		Link:        p.Link,
+		Time:        time.Now().UTC(),
+	})
 }
 
 // Nop swallows notifications (unconfigured installs, tests).
@@ -114,6 +155,7 @@ func (d *Dispatcher) Notify(ctx context.Context, p Payload) error {
 				firstErr = fmt.Errorf("notify: configure %s: %w", c.Type, err)
 			}
 			d.rec.NotificationFailed(c.Type, string(p.Event))
+			d.record(c, p, false, "configure: "+err.Error())
 			continue
 		}
 		if err := ch.Send(ctx, p); err != nil {
@@ -121,9 +163,11 @@ func (d *Dispatcher) Notify(ctx context.Context, p Payload) error {
 				firstErr = err
 			}
 			d.rec.NotificationFailed(c.Type, string(p.Event))
+			d.record(c, p, false, err.Error())
 			continue
 		}
 		d.rec.NotificationSent(c.Type, string(p.Event))
+		d.record(c, p, true, "")
 	}
 	return firstErr
 }

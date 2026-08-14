@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -142,3 +143,43 @@ func TestNopNotifier(t *testing.T) {
 		t.Errorf("Nop should never error: %v", err)
 	}
 }
+
+func TestDispatcherObserverHistory(t *testing.T) {
+	var got []Attempt
+	raw, _ := json.Marshal(map[string]string{"url": "http://x"})
+	load := func(context.Context) ([]Config, error) {
+		return []Config{{ID: 7, Type: "ntfy", Config: raw, Events: nil, Enabled: true}}, nil
+	}
+	d := NewDispatcher(load)
+	d.SetObserver(func(a Attempt) { got = append(got, a) })
+	// First a failing sender, then a succeeding one, to capture both states.
+	fails := true
+	d.factories["ntfy"] = func(json.RawMessage) (Sender, error) {
+		return &failSender{&fails}, nil
+	}
+	_ = d.Notify(context.Background(), Payload{Event: EventNeedsCategory, Title: "T", Message: "M", Link: "http://x/inbox"})
+	_ = d.Notify(context.Background(), Payload{Event: EventNeedsCategory, Title: "T", Message: "M", Link: "http://x/inbox"})
+
+	if len(got) != 2 {
+		t.Fatalf("observer saw %d attempts, want 2: %+v", len(got), got)
+	}
+	if got[0].OK || got[0].ChannelID != 7 || got[0].ChannelType != "ntfy" || got[0].Event != EventNeedsCategory || got[0].Error == "" {
+		t.Errorf("failed attempt wrong: %+v", got[0])
+	}
+	if !got[1].OK || got[1].Title != "T" || got[1].Link != "http://x/inbox" {
+		t.Errorf("ok attempt wrong: %+v", got[1])
+	}
+}
+
+type failSender struct{ fail *bool }
+
+func (f *failSender) Name() string { return "ntfy" }
+func (f *failSender) Send(context.Context, Payload) error {
+	if *f.fail {
+		*f.fail = false
+		return errSendForTest
+	}
+	return nil
+}
+
+var errSendForTest = errors.New("send failed")

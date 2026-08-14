@@ -490,3 +490,40 @@ func TestAllTransactions(t *testing.T) {
 		t.Errorf("filtered export wrong: %+v", filtered)
 	}
 }
+
+func TestNotificationEvents(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+
+	for i := 0; i < 3; i++ {
+		err := st.InsertNotificationEvent(ctx, NotificationEvent{
+			UserID: uid, ChannelID: 1, ChannelType: "webhook", Event: "sync_failed",
+			OK: i%2 == 0, Error: errMsgIf(i), Title: "Sync failed", Message: "m",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, _ := st.CountNotificationEvents(ctx, uid); n != 3 {
+		t.Errorf("count = %d, want 3", n)
+	}
+	evs, err := st.RecentNotificationEvents(ctx, uid, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evs) != 3 || !evs[0].OK || evs[1].OK || !evs[2].OK {
+		t.Errorf("order/ok wrong: %+v", evs)
+	}
+	page2, _ := st.RecentNotificationEvents(ctx, uid, 2, 2)
+	if len(page2) != 1 {
+		t.Errorf("paging wrong: %d", len(page2))
+	}
+}
+
+func errMsgIf(i int) string {
+	if i%2 == 0 {
+		return ""
+	}
+	return "boom"
+}
