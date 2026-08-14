@@ -1,0 +1,11 @@
+{{define "content"}}
+<section class="panel">
+  <h2>Transactions ({{.TxCount}} total, showing latest {{len .Txs}})</h2>
+  <form class="inline-form" method="get" action="/transactions">
+    <label for="limit">Show</label>
+    <input type="number" name="limit" id="limit" value="50" min="1" max="500" style="width:5em">
+    <button type="submit">Apply</button>
+  </form>
+  {{template "tx_table" .}}
+</section>
+{{end}}

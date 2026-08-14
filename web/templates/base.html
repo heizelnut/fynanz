@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} · fynanz</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">fynanz</a>
+    <nav>
+      <a href="/">Dashboard</a>
+      <a href="/transactions">Transactions</a>
+    </nav>
+    <span class="count">{{.TxCount}} tx</span>
+  </header>
+
+  {{if .Message}}<div class="flash ok">{{.Message}}</div>{{end}}
+  {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+
+  <main>
+    {{template "content" .}}
+  </main>
+</body>
+</html>

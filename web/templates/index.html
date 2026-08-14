@@ -1,0 +1,70 @@
+{{define "content"}}
+<section class="panel">
+  <h2>Bank links</h2>
+  <form class="inline-form" method="post" action="/links">
+    <label for="bank">Connect a bank</label>
+    <select name="bank" id="bank">
+      <option value="sandbox">Sandbox (Mock ASPSP)</option>
+      <option value="revolut">Revolut</option>
+      <option value="mediolanum">Banca Mediolanum</option>
+      <optgroup label="Other (aspsp name = bank key)">
+        <option value="custom">Custom</option>
+      </optgroup>
+    </select>
+    <button type="submit">Connect</button>
+  </form>
+
+  {{if .Links}}
+  <table>
+    <thead>
+      <tr><th>Bank</th><th>Status</th><th>Last sync</th><th>Valid until</th><th>Error</th><th></th></tr>
+    </thead>
+    <tbody>
+      {{range .Links}}
+      <tr>
+        <td class="strong">{{.Bank}}</td>
+        <td><span class="badge {{.Status}}">{{.Status}}</span></td>
+        <td>{{.LastSyncedAt}}</td>
+        <td>{{.ValidUntil}}</td>
+        <td class="muted">{{.LastError}}</td>
+        <td class="actions">
+          {{if eq .Status "active"}}<a href="/links/{{.ID}}/sync">Sync now</a>{{end}}
+          {{if eq .Status "active"}}
+          {{else}}<a href="/links/{{.ID}}/reconnect">Re-connect</a>{{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <p><a href="/links/sync">Sync all</a></p>
+  {{else}}
+  <p class="muted">No banks linked yet. Choose one above (Sandbox first: no account needed).</p>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2>Accounts</h2>
+  {{if .Accounts}}
+  <table>
+    <thead><tr><th>Account</th><th>IBAN</th><th>Currency</th><th>Balance</th></tr></thead>
+    <tbody>
+      {{range .Accounts}}
+      <tr>
+        <td class="strong">{{.DisplayName}}</td>
+        <td>{{.Iban}}</td>
+        <td>{{.Currency}}</td>
+        <td>{{if .BalanceMinor}}{{fmtAmount .BalanceMinor .Currency}}{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No accounts yet.</p>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2>Recent transactions <a class="more" href="/transactions">all →</a></h2>
+  {{template "tx_table" .}}
+</section>
+{{end}}

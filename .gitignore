@@ -1,6 +1,7 @@
 # Secrets / local config
 .env
 .env.local
+*.pem
 
 # Runtime data (SQLite)
 data/

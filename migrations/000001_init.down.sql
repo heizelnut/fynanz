@@ -1,0 +1,7 @@
+DROP TABLE IF EXISTS notification_channels;
+DROP TABLE IF EXISTS rules;
+DROP TABLE IF EXISTS categories;
+DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS accounts;
+DROP TABLE IF EXISTS bank_links;
+DROP TABLE IF EXISTS users;
