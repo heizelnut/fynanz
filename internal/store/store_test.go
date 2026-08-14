@@ -260,6 +260,76 @@ func TestMergeCategory(t *testing.T) {
 	}
 }
 
+func TestDashboardAggregations(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+	link, _ := st.CreateLink(ctx, uid, "sandbox", "Mock ASPSP", "FI")
+	ids, _ := st.UpsertAccounts(ctx, uid, link.ID, []AccountInput{
+		{UID: "u1", IdentificationHash: "h1"},
+		{UID: "u2", IdentificationHash: "h2"},
+	})
+	g := func(c int64) *int64 { return &c }
+	cats, _ := st.ListCategories(ctx, uid)
+	groceries, transport := cats[1].ID, cats[3].ID
+
+	txs := []TransactionInput{
+		// August: groceries 10 + 3, transport 2.50, income 100; a transfer;
+		// one uncategorized expense.
+		{EntryReference: "a1", BookingDate: "2026-08-01", AmountMinor: -1000, Currency: "EUR", CreditDebit: "DBIT", CategoryID: g(groceries), CategorySource: CatSourceRule, MerchantNormalized: "m1"},
+		{EntryReference: "a2", BookingDate: "2026-08-05", AmountMinor: -300, Currency: "EUR", CreditDebit: "DBIT", CategoryID: g(groceries), CategorySource: CatSourceRule, MerchantNormalized: "m2"},
+		{EntryReference: "a3", BookingDate: "2026-08-06", AmountMinor: -250, Currency: "EUR", CreditDebit: "DBIT", CategoryID: g(transport), CategorySource: CatSourceRule, MerchantNormalized: "m3"},
+		{EntryReference: "a4", BookingDate: "2026-08-07", AmountMinor: 10000, Currency: "EUR", CreditDebit: "CRDT", CategoryID: g(cats[0].ID), CategorySource: CatSourceRule, MerchantNormalized: "m4"},
+		{EntryReference: "a5", BookingDate: "2026-07-20", AmountMinor: -200, Currency: "EUR", CreditDebit: "DBIT", CategoryID: nil, MerchantNormalized: "m5"},
+		{EntryReference: "a6", BookingDate: "2026-08-10", AmountMinor: -500, Currency: "EUR", CreditDebit: "DBIT", InternalTransfer: true, CategoryID: g(cats[10].ID), CategorySource: CatSourceTransfer, MerchantNormalized: "m6"},
+		// A USD row in the same account (multi-currency isolation).
+		{EntryReference: "a7", BookingDate: "2026-08-11", AmountMinor: -777, Currency: "USD", CreditDebit: "DBIT", CategoryID: g(groceries), CategorySource: CatSourceRule, MerchantNormalized: "m7"},
+	}
+	if _, _, err := st.InsertTransactions(ctx, uid, ids["u1"], txs); err != nil {
+		t.Fatal(err)
+	}
+
+	// Spend by category: August, EUR only — transfer excluded, income
+	// excluded, uncategorized from July excluded by date, USD excluded.
+	spend, err := st.SpendByCategory(ctx, uid, "EUR", "2026-08-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spend) != 2 || spend[0].Name != "Groceries" || spend[0].TotalMinor != 1300 || spend[1].TotalMinor != 250 {
+		t.Errorf("spend by category wrong: %+v", spend)
+	}
+
+	// Editor: if everything is in July (uncategorized), it still shows up.
+	spendJul, _ := st.SpendByCategory(ctx, uid, "EUR", "2026-07-01")
+	if len(spendJul) != 3 || !spendJul[2].IsUncategorized {
+		t.Errorf("july spend (incl. uncategorized) wrong: %+v", spendJul)
+	}
+
+	flows, err := st.IncomeExpenseByMonth(ctx, uid, "EUR", "2026-07-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(flows) != 2 || flows[0].Month != "2026-07" || flows[0].ExpenseMinor != 200 ||
+		flows[1].Month != "2026-08" || flows[1].IncomeMinor != 10000 || flows[1].ExpenseMinor != 1550 {
+		t.Errorf("month flows wrong: %+v", flows)
+	}
+
+	days, err := st.DailyAmountSums(ctx, uid, ids["u1"], "2026-08-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every movement counts here (balance is balance): 6 distinct booking
+	// days on account u1 in August — transfers included, USD rows too.
+	if len(days) != 6 || days[0].Date != "2026-08-01" {
+		t.Errorf("daily sums wrong: %+v", days)
+	}
+
+	cur, err := st.PrimaryCurrency(ctx, uid)
+	if err != nil || cur != "EUR" {
+		t.Errorf("primary currency = %q, %v; want EUR", cur, err)
+	}
+}
+
 func TestEmptyEntryReferenceGetsPseudoRef(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()

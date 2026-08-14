@@ -148,6 +148,77 @@ td.wrap {
   color: #fff;
   font-weight: 600;
 }
+
+/* Dashboard charts (milestone 7): pure-CSS bars + inline SVG line, no deps.
+   .dash-grid spreads across the viewport; panels stack on mobile. */
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.dash-grid .panel { margin-bottom: 0; }
+.dash-grid .span2 { grid-column: 1 / -1; }
+
+.hbars { display: flex; flex-direction: column; gap: .4rem; }
+.hbar { display: flex; align-items: baseline; gap: .6rem; font-size: .9rem; }
+.hbar-label { flex: 0 0 9em; overflow-wrap: anywhere; }
+.hbar-track {
+  flex: 1;
+  height: .7em;
+  background: var(--badge-neutral-bg);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.hbar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+.hbar-val { flex: 0 0 5.5em; text-align: right; }
+
+.vbars { display: flex; align-items: flex-end; gap: .6rem; height: 11rem; }
+.vbar-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .25rem;
+  min-width: 0;
+}
+.vbar-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  width: 100%;
+  flex: 1;
+  justify-content: center;
+}
+.vbar-in, .vbar-out { display: block; width: 38%; max-width: 26px; border-radius: 3px 3px 0 0; }
+.vbar-in { background: var(--ok); }
+.vbar-out { background: var(--err); }
+.vbar-label { font-size: .78rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .9rem; font-size: .8rem; }
+.sw { display: inline-block; width: .8em; height: .8em; border-radius: 3px; }
+.sw.in { background: var(--ok); }
+.sw.out { background: var(--err); }
+
+svg.balance {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 220px;
+}
+.bal { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.bal.bal-0 { stroke: var(--accent); }
+.bal.bal-1 { stroke: var(--ok); }
+.bal.bal-2 { stroke: var(--err); }
+.bal.bal-3 { stroke: #a97bff; }
+.sw.bal-0 { background: var(--accent); }
+.sw.bal-1 { background: var(--ok); }
+.sw.bal-2 { background: var(--err); }
+.sw.bal-3 { background: #a97bff; }
 .inline-form label { color: var(--muted); font-size: .9rem; }
 select, input {
   font: inherit;

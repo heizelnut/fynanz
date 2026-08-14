@@ -1,18 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
 	"net/http"
 	"sort"
 	"strconv"
-
-	"fynanz/internal/notify"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"fynanz/internal/metrics"
+	"fynanz/internal/notify"
 	"fynanz/internal/store"
 	"fynanz/internal/sync"
 )
@@ -69,6 +71,18 @@ type pageData struct {
 	Uncategorized  []store.Transaction
 	UncategorizedN int64
 	Pagination     pagination
+	Dashboard      dashboardData
+}
+
+// dashboardData is everything the insights panels need (milestone 7); empty
+// HasData=false renders the "sync to see insights" hint.
+type dashboardData struct {
+	HasData  bool
+	Currency string
+	Since    string // balance series starts here (derived, not bank-reported)
+	CatSpend []catSpendRow
+	Flows    []monthFlowRow
+	Balance  balanceChart
 }
 
 // pagination describes one page of a transaction listing.
@@ -168,7 +182,96 @@ func (h *handlers) index(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	dash, err := h.dashboard(r.Context())
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	data.Dashboard = dash
 	h.render(w, "index.html", data)
+}
+
+// dashboard assembles the insights panels (AGENTS.md §14 milestone 7): spend
+// by category this month, 6 months of income vs expense, and a derived
+// balance trend per account with balance data. v1 shows the primary currency
+// only (no FX, §4).
+func (h *handlers) dashboard(ctx context.Context) (dashboardData, error) {
+	var d dashboardData
+	cur, err := h.store.PrimaryCurrency(ctx, defaultUserID)
+	if err != nil {
+		return d, err
+	}
+	if cur == "" {
+		return d, nil
+	}
+	now := time.Now().UTC()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	historyFrom := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -5, 0)
+
+	cats, err := h.store.SpendByCategory(ctx, defaultUserID, cur, monthStart)
+	if err != nil {
+		return d, err
+	}
+	flows, err := h.store.IncomeExpenseByMonth(ctx, defaultUserID, cur, historyFrom.Format("2006-01-02"))
+	if err != nil {
+		return d, err
+	}
+	d = dashboardData{
+		HasData:  true,
+		Currency: cur,
+		CatSpend: fillCatSpend(cats),
+		Flows:    fillMonthFlows(flows, 6, now),
+	}
+
+	// Balance trend: derived per account (see deriveBalanceSeries).
+	accounts, err := h.store.ListAccounts(ctx, defaultUserID)
+	if err != nil {
+		return d, err
+	}
+	since := now.AddDate(0, 0, -90).Format("2006-01-02")
+	d.Since = since
+	type rawSeries struct {
+		label string
+		pts   []balancePoint
+	}
+	var raw []rawSeries
+	var allPts []balancePoint
+	for _, a := range accounts {
+		if a.BalanceMinor == nil {
+			continue
+		}
+		days, err := h.store.DailyAmountSums(ctx, defaultUserID, a.ID, since)
+		if err != nil {
+			return d, err
+		}
+		pts := deriveBalanceSeries(*a.BalanceMinor, days, 60)
+		if len(pts) == 0 {
+			continue
+		}
+		raw = append(raw, rawSeries{label: a.DisplayName(), pts: pts})
+		allPts = append(allPts, pts...)
+	}
+	if len(raw) > 0 {
+		min, maxV := allPts[0].Minor, allPts[0].Minor
+		for _, p := range allPts[1:] {
+			if p.Minor < min {
+				min = p.Minor
+			}
+			if p.Minor > maxV {
+				maxV = p.Minor
+			}
+		}
+		series := make([]lineSeries, 0, len(raw))
+		for i, rs := range raw {
+			series = append(series, lineSeries{
+				Label:  rs.label,
+				Points: svgPoints(rs.pts, min, maxV, 600, 200),
+				Class:  fmt.Sprintf("bal-%d", i),
+			})
+		}
+		d.Balance = buildBalanceChart(series, min, maxV, nil)
+	}
+	return d, nil
 }
 
 func (h *handlers) transactions(w http.ResponseWriter, r *http.Request) {

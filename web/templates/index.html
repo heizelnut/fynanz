@@ -42,6 +42,66 @@
   {{end}}
 </section>
 
+{{if .Dashboard.HasData}}
+<section class="dash-grid">
+  <div class="panel">
+    <h2>Spend this month <span class="muted mono">{{.Dashboard.Currency}}</span></h2>
+    {{if .Dashboard.CatSpend}}
+    <div class="hbars">
+      {{range .Dashboard.CatSpend}}
+      <div class="hbar">
+        <span class="hbar-label wrap">{{.Name}}</span>
+        <span class="hbar-track"><span class="hbar-fill" style="width:{{.Pct}}%"></span></span>
+        <span class="hbar-val num mono">{{fmtAmount .TotalMinor $.Dashboard.Currency}}</span>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="muted">No expenses in {{$.Dashboard.Currency}} this month.</p>
+    {{end}}
+  </div>
+
+  <div class="panel">
+    <h2>Income vs expenses <span class="muted">6 months</span></h2>
+    {{if .Dashboard.Flows}}
+    <div class="vbars">
+      {{range .Dashboard.Flows}}
+      <div class="vbar-col" title="{{.Month}}: income {{fmtAmount .IncomeMinor $.Dashboard.Currency}}, expense {{fmtAmount .ExpenseMinor $.Dashboard.Currency}}">
+        <div class="vbar-bars">
+          <span class="vbar-in" style="height:{{.IncomePct}}%"></span>
+          <span class="vbar-out" style="height:{{.ExpensePct}}%"></span>
+        </div>
+        <span class="vbar-label mono">{{.Label}}</span>
+      </div>
+      {{end}}
+    </div>
+    <div class="legend muted"><span class="sw in"></span> income <span class="sw out"></span> expense</div>
+    {{end}}
+  </div>
+
+  <div class="panel span2">
+    <h2>Balance trend <span class="muted">derived from daily transactions</span></h2>
+    {{if .Dashboard.Balance.Series}}
+    <svg class="balance" viewBox="0 0 600 200" role="img" aria-label="balance trend">
+      {{range .Dashboard.Balance.Series}}<polyline class="bal {{.Class}}" points="{{.Points}}"></polyline>{{end}}
+    </svg>
+    <div class="legend muted">
+      {{range .Dashboard.Balance.Series}}<span class="sw {{.Class}}"></span> {{.Label}}{{end}}
+      · min {{fmtAmount .Dashboard.Balance.Min .Dashboard.Currency}} / max {{fmtAmount .Dashboard.Balance.Max .Dashboard.Currency}}
+      · since {{.Dashboard.Since}}
+    </div>
+    {{else}}
+    <p class="muted">No balance history to show yet (accounts gain balances after a sync).</p>
+    {{end}}
+  </div>
+</section>
+{{else}}
+<section class="panel">
+  <h2>Insights</h2>
+  <p class="muted">Spending, income and balance charts appear here once transactions are synced — connect a bank above and sync.</p>
+</section>
+{{end}}
+
 <section class="panel">
   <h2>Accounts</h2>
   {{if .Accounts}}
