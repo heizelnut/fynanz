@@ -653,9 +653,15 @@ func toTransactionInput(t Transaction) (store.TransactionInput, error) {
 	if err != nil {
 		return store.TransactionInput{}, err
 	}
+	bookingDate := t.BookingDate
+	if bookingDate == "" {
+		// Some connectors only date transactions with value_date; charts and
+		// lists group by booking_date, so bank on either.
+		bookingDate = t.ValueDate
+	}
 	in := store.TransactionInput{
 		EntryReference:        t.EntryReference,
-		BookingDate:           t.BookingDate,
+		BookingDate:           bookingDate,
 		ValueDate:             t.ValueDate,
 		AmountMinor:           minor,
 		Currency:              t.TransactionAmount.Currency,

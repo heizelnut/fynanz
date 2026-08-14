@@ -68,7 +68,11 @@
 
   <div class="panel">
     <h2>Income vs expenses <span class="muted">6 months</span></h2>
-    {{if .Dashboard.Flows}}
+    {{if not .Dashboard.HasFlows}}
+    <p class="muted">No income or expenses recorded in {{.Dashboard.Currency}} over the last 6 months.
+    Transactions with an empty booking date (some Revolut data) were backfilled from the value date —
+    re-run a sync if this looks stale.</p>
+    {{else}}
     <div class="vbars">
       {{range .Dashboard.Flows}}
       <div class="vbar-col" title="{{.Month}}: income {{fmtAmount .IncomeMinor $.Dashboard.Currency}}, expense {{fmtAmount .ExpenseMinor $.Dashboard.Currency}}">

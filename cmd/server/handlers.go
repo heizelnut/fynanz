@@ -102,6 +102,7 @@ type dashboardData struct {
 	Flows       []monthFlowRow
 	Balance     balanceChart
 	BalanceJSON string // crosshair data (see balChartJSON)
+	HasFlows    bool   // any income/expense in the window (else show hint)
 }
 
 // pagination describes one page of a transaction listing.
@@ -236,11 +237,20 @@ func (h *handlers) dashboard(ctx context.Context) (dashboardData, error) {
 	if err != nil {
 		return d, err
 	}
+	flowRows := fillMonthFlows(flows, 6, now)
+	hasFlows := false
+	for _, f := range flowRows {
+		if f.IncomeMinor > 0 || f.ExpenseMinor > 0 {
+			hasFlows = true
+			break
+		}
+	}
 	d = dashboardData{
 		HasData:  true,
 		Currency: cur,
 		CatSpend: fillCatSpend(cats),
-		Flows:    fillMonthFlows(flows, 6, now),
+		Flows:    flowRows,
+		HasFlows: hasFlows,
 	}
 
 	// Balance trend: derived per account (see deriveBalanceSeries).
