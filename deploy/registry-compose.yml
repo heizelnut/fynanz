@@ -1,0 +1,36 @@
+# A private Docker image registry for the homelab (docker/distribution).
+# Usage:
+#   docker compose -f deploy/registry-compose.yml up -d
+#
+# Optional basic auth (recommended even on the tailnet — registries get
+# scanned by bots the moment anything is reachable):
+#   docker run --rm --entrypoint htpasswd registry:2 -Bbn <user> <secret> > deploy/htpasswd
+#
+# Keep the Traefik route TAILNET-only: this registry is for your machines,
+# not the public internet (same edge as fynanz, no public exposure).
+#
+# Then from a dev machine:
+#   make image REGISTRY=registry.heiz.cc
+services:
+  registry:
+    image: registry:2
+    container_name: registry
+    restart: unless-stopped
+    environment:
+      # Uncomment when deploy/htpasswd exists (created as above):
+      # REGISTRY_AUTH: htpasswd
+      # REGISTRY_AUTH_HTPASSWD_REALM: Registry Realm
+      # REGISTRY_AUTH_HTPASSWD_PATH: /auth/htpasswd
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - registry-data:/var/lib/registry
+      # - ./htpasswd:/auth/htpasswd:ro
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.registry.rule=Host(`registry.heiz.cc`)
+      - traefik.http.routers.registry.entrypoints=websecure
+      - traefik.http.routers.registry.tls.certresolver=letsencrypt
+      - traefik.http.services.registry.loadbalancer.server.port=5000
+
+volumes:
+  registry-data:

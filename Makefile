@@ -1,7 +1,13 @@
 # fynanz dev workflow. Requires: go, air, golang-migrate, golangci-lint.
 DB_PATH ?= ./data/fynanz.db
 
-.PHONY: dev build test lint creds aspsps docker-up docker-down migrate-up migrate-down migrate-create fmt
+.PHONY: dev build test lint creds aspsps docker-up docker-down image migrate-up migrate-down migrate-create fmt
+
+## image: build and push to a private registry, e.g. make image REGISTRY=registry.heiz.cc
+image:
+	@test -n "$(REGISTRY)" || (echo "usage: make image REGISTRY=registry.heiz.cc"; exit 1)
+	docker build -t $(REGISTRY)/fynanz:latest .
+	docker push $(REGISTRY)/fynanz:latest
 
 ## aspsps: list banks the API exposes for a country (authoritative names)
 aspsps:
