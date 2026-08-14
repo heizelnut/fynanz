@@ -51,4 +51,9 @@ func TestInboxTemplates(t *testing.T) {
 	if !strings.Contains(page.String(), `id="inbox-body"`) {
 		t.Error("page does not include inbox rows")
 	}
+	// The rows must live in a real table with column headers: a bare tbody
+	// loses table styling and the header row (regression guard).
+	if !strings.Contains(page.String(), "<thead>") || !strings.Contains(page.String(), "<th>Merchant</th>") {
+		t.Error("page table header missing")
+	}
 }

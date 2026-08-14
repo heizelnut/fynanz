@@ -7,7 +7,12 @@
   {{if .Uncategorized}}{{with index .Uncategorized 0}}
   <p class="muted">Pick the category — this also teaches the rule for “{{.MerchantNormalized}}” and similar.</p>
   {{end}}{{end}}
-  {{template "inbox_rows" .}}
+  <table>
+    <thead>
+      <tr><th>Date</th><th>Merchant</th><th>Details</th><th class="num">Amount</th><th>Category</th></tr>
+    </thead>
+    {{template "inbox_rows" .}}
+  </table>
   <div class="pager" id="inbox-pager">
     <span class="pager-info muted">{{if gt .Pagination.Total 0}}Showing {{.Pagination.From}}–{{.Pagination.To}} of {{.Pagination.Total}} open{{end}}</span>
     {{if gt .Pagination.TotalPages 1}}
