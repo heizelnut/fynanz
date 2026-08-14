@@ -69,22 +69,15 @@ body {
 .brand { font-weight: 700; color: var(--fg); text-decoration: none; font-size: 1.1rem; }
 .topbar nav a { color: var(--muted); text-decoration: none; margin-right: .9rem; }
 .topbar nav a:hover { color: var(--accent); }
-/* Active page: a dot under the label. Anchored to the VISIBLE span (full
-   name on desktop, mono code on mobile) — its box is exactly the text, so
-   the dot stays centred even next to the inbox count badge. */
-.nav-full { display: inline-block; }
+/* Active page: dashed underline under the label. Decoration goes on the
+   visible span itself (full name desktop / mono code mobile), so it hugs
+   the text exactly and ignores the inbox count badge next to it. */
 .topbar nav a.active { color: var(--fg); }
-.topbar nav a.active .nav-full, .topbar nav a.active .nav-short { position: relative; }
-.topbar nav a.active .nav-full::after, .topbar nav a.active .nav-short::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: -.62rem;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
+.topbar nav a.active .nav-full, .topbar nav a.active .nav-short {
+  text-decoration: underline dashed;
+  text-decoration-thickness: 1px;
+  text-underline-offset: .32em;
+  text-decoration-color: var(--accent);
 }
 /* The 2-letter nav codes only exist on small screens (base.html renders
    both; desktop hides the code, mobile hides the full name). */
