@@ -1,0 +1,54 @@
+# fynanz — self-hosted transaction dashboard (AGENTS.md §9/§13).
+# One service: Go binary + SQLite volume, no separate DB container.
+#
+# Quick start (sandbox, ~5 min):
+#   cp .env.example .env        # fill ENABLE_BANKING_APP_ID + EB_KEY_HOST_PATH
+#   docker compose up --build
+#
+# Homelab (Traefik + Tailscale): see README → "Homelab deployment".
+
+services:
+  fynanz:
+    build: .
+    image: fynanz:latest
+    container_name: fynanz
+    restart: unless-stopped
+
+    env_file:
+      - .env
+    environment:
+      # Paths fixed for the container; everything else comes from .env.
+      PORT: "8080"
+      DB_PATH: /data/fynanz.db
+      # The private key is bind-mounted below; this is its in-container path
+      # (overrides whatever ENABLE_BANKING_PRIVATE_KEY says in .env).
+      ENABLE_BANKING_PRIVATE_KEY: /data/fynanz-key.pem
+
+    volumes:
+      - fynanz-data:/data
+      # Host path of the Enable Banking .pem (set EB_KEY_HOST_PATH in .env).
+      - ${EB_KEY_HOST_PATH:-./fynanz-key.pem}:/data/fynanz-key.pem:ro
+
+    ports:
+      # For quick local use. Remove when Traefik fronts it (Traefik reaches
+      # the container on the service network, no host port needed).
+      - "${PORT:-8080}:8080"
+
+    # --- Homelab deployment (uncomment + create the network once):
+    #   docker network create proxy
+    # networks:
+    #   - proxy
+    # labels:
+    #   - traefik.enable=${TRAEFIK_ENABLE:-false}
+    #   - traefik.http.routers.fynanz.rule=Host(`${DOMAIN}`)
+    #   - traefik.http.routers.fynanz.entrypoints=websecure
+    #   - traefik.http.routers.fynanz.tls.certresolver=letsencrypt
+    #   - traefik.http.services.fynanz.loadbalancer.server.port=8080
+
+# networks:
+#   proxy:
+#     external: true
+#     name: proxy
+
+volumes:
+  fynanz-data:

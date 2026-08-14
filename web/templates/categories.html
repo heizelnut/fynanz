@@ -27,7 +27,7 @@
         </td>
         <td data-label="Merge into">
           <form class="inline-form" method="post" action="/categories/{{$row.ID}}/merge">
-            <select name="into">
+            <select class="merge-select" name="into">
               {{range $.Categories}}{{if ne .ID $row.ID}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
             </select>
             <button class="danger" onclick="return confirm('Merge all transactions + rules into the target and delete this category?')">Merge</button>

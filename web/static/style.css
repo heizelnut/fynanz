@@ -125,6 +125,10 @@ td.wrap {
 .badge.pending_consent { background: var(--badge-pending-bg); color: var(--badge-pending-fg); }
 .badge.expired, .badge.error { background: var(--badge-err-bg); color: var(--err); }
 .badge.revoked, .badge.closed, .badge.neutral { background: var(--badge-neutral-bg); color: var(--muted); }
+/* Merge dropdowns got ragged widths because a <select> fits its longest
+   option and each row excludes its own name; pin them uniform instead. */
+.merge-select { width: 13em; }
+
 .check-grid {
   display: flex;
   flex-wrap: wrap;
