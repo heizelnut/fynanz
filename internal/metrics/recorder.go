@@ -31,3 +31,11 @@ func (Recorder) SetAccounts(bank string, n int) {
 func (Recorder) SetUncategorized(n int64) {
 	Uncategorized.Set(float64(n))
 }
+
+func (Recorder) NotificationSent(backend, event string) {
+	NotificationsSent.With(prometheus.Labels{"backend": backend, "event": event}).Inc()
+}
+
+func (Recorder) NotificationFailed(backend, event string) {
+	NotificationsFailed.With(prometheus.Labels{"backend": backend, "event": event}).Inc()
+}

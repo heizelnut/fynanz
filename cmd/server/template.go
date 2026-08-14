@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	"fynanz/internal/sync"
 	"fynanz/web"
@@ -28,7 +30,7 @@ func mustStatic() fs.FS {
 // (base + partials + page) so every page's {{define "content"}} is
 // unambiguous — parsing all pages in one set would make the last definition
 // win for every request.
-var pageFiles = []string{"index.html", "transactions.html", "inbox.html", "categories.html"}
+var pageFiles = []string{"index.html", "transactions.html", "inbox.html", "categories.html", "settings.html"}
 
 // loadTemplates parses one template set per page from the embedded FS.
 func (h *handlers) loadTemplates() error {
@@ -37,9 +39,10 @@ func (h *handlers) loadTemplates() error {
 		return err
 	}
 	funcs := template.FuncMap{
-		"fmtAmount":   fmtAmount,
-		"fmtDate":     fmtDate,
-		"accountName": h.accountName,
+		"fmtAmount":     fmtAmount,
+		"fmtDate":       fmtDate,
+		"accountName":   h.accountName,
+		"eventsSummary": eventsSummary,
 	}
 	h.pages = make(map[string]*template.Template, len(pageFiles))
 	for _, page := range pageFiles {
@@ -118,6 +121,29 @@ func fmtDate(s string) string {
 		return s[:10]
 	}
 	return s
+}
+
+// eventsSummary renders a channel's routing map as short human labels.
+func eventsSummary(eventsJSON string) string {
+	var m map[string]bool
+	if err := json.Unmarshal([]byte(eventsJSON), &m); err != nil || len(m) == 0 {
+		return "all events"
+	}
+	order := []struct{ key, label string }{
+		{"needs_category", "new tx"},
+		{"reauth_needed", "re-auth"},
+		{"sync_failed", "sync failed"},
+	}
+	var labels []string
+	for _, kv := range order {
+		if m[kv.key] {
+			labels = append(labels, kv.label)
+		}
+	}
+	if len(labels) == 0 {
+		return "none"
+	}
+	return strings.Join(labels, ", ")
 }
 
 func urlEncode(s string) string { return url.QueryEscape(s) }

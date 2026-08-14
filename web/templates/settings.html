@@ -1,0 +1,55 @@
+// Notification channel configuration (AGENTS.md §7): add/remove ntfy or
+// webhook channels, each with per-event routing (all toggleable).
+{{define "content"}}
+<section class="panel">
+  <h2>Notification channels</h2>
+  <p class="muted">Channels send pushes when a sync needs your attention — new transactions to categorize, a bank session expiring, or a failed sync. Multiple channels can be active at once, each with its own event routing.</p>
+
+  <form class="inline-form" method="post" action="/settings/notifications">
+    <label for="chtype">Type</label>
+    <select name="type" id="chtype" onchange="var w=this.value==='webhook';document.getElementById('ntfy-fields').style.display=w?'none':'';document.getElementById('webhook-fields').style.display=w?'':'none';">
+      <option value="ntfy">ntfy</option>
+      <option value="webhook">Webhook</option>
+    </select>
+    <span id="ntfy-fields">
+      <input type="url" name="ntfy_url" value="https://ntfy.sh" style="width:14em" title="ntfy server (e.g. ntfy.sh or self-hosted)">
+      <input type="text" name="ntfy_topic" placeholder="topic" required style="width:10em">
+      <input type="password" name="ntfy_token" placeholder="access token (optional)" style="width:12em">
+    </span>
+    <span id="webhook-fields" style="display:none">
+      <input type="url" name="webhook_url" placeholder="https://…/receive" required style="width:20em">
+    </span>
+    <button>Add</button>
+    <div class="check-grid">
+      <label><input type="checkbox" name="needs_category" checked> New tx needs category</label>
+      <label><input type="checkbox" name="reauth_needed" checked> Re-authorization needed</label>
+      <label><input type="checkbox" name="sync_failed" checked> Sync failed</label>
+    </div>
+  </form>
+
+  {{if .Channels}}
+  <table>
+    <thead>
+      <tr><th>Type</th><th>Config</th><th>Events</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {{range .Channels}}
+      <tr>
+        <td><span class="badge neutral">{{.Type}}</span></td>
+        <td class="muted wrap">{{.Config}}</td>
+        <td class="muted">{{eventsSummary .Events}}</td>
+        <td>{{if .Enabled}}<span class="ok-text">enabled</span>{{else}}<span class="muted">disabled</span>{{end}}</td>
+        <td>
+          <form method="post" action="/settings/notifications/{{.ID}}/delete" onsubmit="return confirm('Remove this channel?')">
+            <button class="danger">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No channels yet — add one above (ntfy.sh works with a public topic, or point at a self-hosted instance).</p>
+  {{end}}
+</section>
+{{end}}

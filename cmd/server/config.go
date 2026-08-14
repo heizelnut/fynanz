@@ -19,6 +19,7 @@ type Config struct {
 	SyncInterval   time.Duration
 	HistoryDays    int
 	MaxConsentDays int
+	PublicBaseURL  string // outside origin, used for notification deep links
 }
 
 func getenv(key, fallback string) string {
@@ -58,5 +59,6 @@ func loadConfig() Config {
 		SyncInterval:   getenvDuration("SYNC_INTERVAL", 24*time.Hour),
 		HistoryDays:    getenvInt("SYNC_HISTORY_DAYS", 90),
 		MaxConsentDays: getenvInt("ENABLE_BANKING_MAX_CONSENT_DAYS", 30),
+		PublicBaseURL:  getenv("PUBLIC_BASE_URL", "http://localhost:8080"),
 	}
 }

@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
 	"sort"
 	"strconv"
+
+	"fynanz/internal/notify"
 
 	"github.com/go-chi/chi/v5"
 
@@ -38,6 +41,9 @@ func newServer(st *store.Store, svc *sync.Service) http.Handler {
 	r.Post("/categories", h.categoriesCreate)
 	r.Post("/categories/{catID}/rename", h.categoriesRename)
 	r.Post("/categories/{catID}/merge", h.categoriesMerge)
+	r.Get("/settings", h.settings)
+	r.Post("/settings/notifications", h.notificationsAdd)
+	r.Post("/settings/notifications/{chID}/delete", h.notificationsDelete)
 	r.Post("/links", h.createLink)
 	r.Get("/links/callback", h.linkCallback)
 	r.Get("/links/sync", h.syncAll)
@@ -402,6 +408,78 @@ func (h *handlers) categories(w http.ResponseWriter, r *http.Request) {
 		cc = append(cc, catCount{ID: c.ID, Name: c.Name, Count: counts[c.ID]})
 	}
 	h.render(w, "categories.html", categoryPageData{pageData: data, CatTxCounts: cc})
+}
+
+// settings renders the notification channels panel (§7 configuration UI).
+func (h *handlers) settings(w http.ResponseWriter, r *http.Request) {
+	data, err := h.page(r, "Settings", 50, 1)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	ch, err := h.store.ListNotificationChannels(r.Context(), defaultUserID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	settingsData := struct {
+		pageData
+		Channels []store.NotificationChannel
+	}{
+		pageData: data,
+		Channels: ch,
+	}
+	h.render(w, "settings.html", settingsData)
+}
+
+// notificationsAdd persists a new channel from the form (ntfy or webhook).
+// Events come in as checkboxes; unset = not subscribed (explicit opt-in when
+// the form submitted; an empty events JSON still means "all" in the loader,
+// so we always write at least one event here).
+func (h *handlers) notificationsAdd(w http.ResponseWriter, r *http.Request) {
+	typ := r.FormValue("type")
+	if typ != "ntfy" && typ != "webhook" {
+		http.Redirect(w, r, "/settings?err=unknown+channel+type", http.StatusSeeOther)
+		return
+	}
+	var config string
+	switch typ {
+	case "ntfy":
+		c := notify.NtfyConfig{URL: r.FormValue("ntfy_url"), Topic: r.FormValue("ntfy_topic"), Token: r.FormValue("ntfy_token")}
+		raw, err := json.Marshal(c)
+		if err != nil {
+			httpRedirErr(w, r, err)
+			return
+		}
+		config = string(raw)
+	case "webhook":
+		c := notify.WebhookConfig{URL: r.FormValue("webhook_url")}
+		raw, err := json.Marshal(c)
+		if err != nil {
+			httpRedirErr(w, r, err)
+			return
+		}
+		config = string(raw)
+	}
+	events := map[notify.Event]bool{}
+	for _, e := range []notify.Event{notify.EventNeedsCategory, notify.EventReauthNeeded, notify.EventSyncFailed} {
+		events[e] = r.FormValue(string(e)) == "on"
+	}
+	eventsRaw, _ := json.Marshal(events)
+	if _, err := h.store.InsertNotificationChannel(r.Context(), defaultUserID, typ, config, string(eventsRaw), true); err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/settings?msg=notification+channel+added", http.StatusSeeOther)
+}
+
+func (h *handlers) notificationsDelete(w http.ResponseWriter, r *http.Request) {
+	id := strID(chi.URLParam(r, "chID"))
+	if err := h.store.DeleteNotificationChannel(r.Context(), defaultUserID, id); err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/settings?msg=channel+removed", http.StatusSeeOther)
 }
 
 func (h *handlers) categoriesCreate(w http.ResponseWriter, r *http.Request) {

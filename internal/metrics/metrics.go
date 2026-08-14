@@ -36,6 +36,22 @@ var (
 		Help:      "Currently linked accounts per bank link.",
 	}, []string{"bank"})
 
+	// NotificationsSent counts delivered pushes per backend and event.
+	NotificationsSent = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "fynanz",
+		Subsystem: "notify",
+		Name:      "sent_total",
+		Help:      "Notifications delivered per backend and event.",
+	}, []string{"backend", "event"})
+
+	// NotificationsFailed counts failed sends per backend and event.
+	NotificationsFailed = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "fynanz",
+		Subsystem: "notify",
+		Name:      "failed_total",
+		Help:      "Notifications that failed per backend and event.",
+	}, []string{"backend", "event"})
+
 	// Uncategorized is the current number of transactions awaiting a category.
 	Uncategorized = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "fynanz",
@@ -46,7 +62,8 @@ var (
 )
 
 func init() {
-	prometheus.MustRegister(SyncRuns, TransactionsIngested, AccountsSynced, Uncategorized)
+	prometheus.MustRegister(SyncRuns, TransactionsIngested, AccountsSynced, Uncategorized,
+		NotificationsSent, NotificationsFailed)
 }
 
 func Handler() http.Handler { return promhttp.Handler() }

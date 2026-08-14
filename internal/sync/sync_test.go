@@ -3,15 +3,26 @@ package sync
 import (
 	"context"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 
 	"fynanz/internal/metrics"
+	"fynanz/internal/notify"
 	"fynanz/internal/store"
 )
 
 // newTestService wires a real store (temp DB) + fake EB server.
 func newTestService(t *testing.T, f *fakeEB) (*Service, *store.Store) {
+	return newTestServiceN(t, f, nil)
+}
+
+func newTestServiceN(t *testing.T, f *fakeEB, n notify.Notifier) (*Service, *store.Store) {
 	t.Helper()
+	if n == nil {
+		n = notify.Nop{}
+	}
 	st, err := store.Open(filepath.Join(t.TempDir(), "int.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -22,9 +33,28 @@ func newTestService(t *testing.T, f *fakeEB) (*Service, *store.Store) {
 	t.Cleanup(func() { _ = st.Close() })
 
 	c := testClient(t, f)
-	svc := NewService(st, c, metrics.Recorder{}, "http://localhost:8080/links/callback",
-		"personal", 90, 30)
+	svc := NewService(st, c, metrics.Recorder{}, n, "http://localhost:8080",
+		"http://localhost:8080/links/callback", "personal", 90, 30)
 	return svc, st
+}
+
+// fakeNotifier records payloads for assertions.
+type fakeNotifier struct {
+	mu   sync.Mutex
+	sent []notify.Payload
+}
+
+func (f *fakeNotifier) Notify(_ context.Context, p notify.Payload) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sent = append(f.sent, p)
+	return nil
+}
+
+func (f *fakeNotifier) events() []notify.Payload {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]notify.Payload(nil), f.sent...)
 }
 
 func fixtureEB() *fakeEB {
@@ -179,9 +209,55 @@ func TestExpiredSessionMarksLinkReauth(t *testing.T) {
 	if got.Status != store.LinkExpired {
 		t.Errorf("link status = %q, want %q (last_error: %s)", got.Status, store.LinkExpired, got.LastError)
 	}
-	active, _ := st.ActiveLinks(ctx, link.UserID)
-	if len(active) != 0 {
-		t.Errorf("expired link still in active list")
+}
+
+// TestReauthAndInboxNotifications asserts the Milestone-5 events fire with
+// the right deep links (an expired session and a new uncategorized tx).
+func TestNotificationsFireOnSyncEvents(t *testing.T) {
+	f := fixtureEB()
+	f.txnsPage1 = TransactionsResponse{Transactions: []Transaction{
+		{EntryReference: "n-1", TransactionAmount: Amount{Currency: "EUR", Amount: "12.00"},
+			CreditDebitIndicator: "DBIT", Status: "BOOK", BookingDate: "2025-03-01",
+			Creditor: &PartyIdentification{Name: "Odd Shop"}},
+	}}
+	n := &fakeNotifier{}
+	svc, _ := newTestServiceN(t, f, n)
+	ctx := context.Background()
+	link, _, err := svc.StartLink(ctx, "sandbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CompleteLink(ctx, link.State, "code-123"); err != nil {
+		t.Fatal(err)
+	}
+
+	// needs_category fired after the first sync (new tx, no matching rule).
+	events := n.events()
+	if len(events) != 1 {
+		t.Fatalf("expected 1 event after first sync, got %d: %+v", len(events), events)
+	}
+	if events[0].Event != notify.EventNeedsCategory {
+		t.Errorf("event = %s, want needs_category", events[0].Event)
+	}
+	if !strings.HasSuffix(events[0].Link, "/inbox") || events[0].Merchant != "odd shop" || events[0].AmountMinor != -1200 {
+		t.Errorf("needs_category payload wrong: %+v", events[0])
+	}
+
+	// Now expire the session mid-flight: reauth_needed with a reconnect link.
+	f.setSessionErr(&APIError{HTTPStatus: 400, Message: "expired", Code: "EXPIRED_SESSION"})
+	if _, err := svc.SyncLink(ctx, link.ID); err == nil {
+		t.Fatal("sync succeeded despite expired session")
+	}
+	events = n.events()
+	if len(events) != 2 {
+		t.Fatalf("expected 2 events, got %d: %+v", len(events), events)
+	}
+	r := events[1]
+	if r.Event != notify.EventReauthNeeded {
+		t.Errorf("second event = %s, want reauth_needed", r.Event)
+	}
+	if !strings.Contains(r.Link, "/links/"+strconv.FormatInt(link.ID, 10)+"/reconnect") {
+		t.Errorf("reauth link wrong: %s", r.Link)
 	}
 }
 

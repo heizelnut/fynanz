@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"github.com/joho/godotenv"
 
 	"fynanz/internal/metrics"
+	"fynanz/internal/notify"
 	"fynanz/internal/store"
 	"fynanz/internal/sync"
 )
@@ -47,8 +49,9 @@ func main() {
 	}
 
 	client := sync.NewClient(cfg.EBBaseURL, cfg.EBAppID, key)
-	svc := sync.NewService(st, client, metrics.Recorder{}, cfg.EBRedirectURL, cfg.PSUType,
-		cfg.HistoryDays, cfg.MaxConsentDays)
+	notifier := notify.NewDispatcher(buildNotifyLoader(st))
+	svc := sync.NewService(st, client, metrics.Recorder{}, notifier, cfg.PublicBaseURL,
+		cfg.EBRedirectURL, cfg.PSUType, cfg.HistoryDays, cfg.MaxConsentDays)
 
 	// Backfill categorization for rows synced before rules existed (§5).
 	if err := svc.Reclassify(ctx); err != nil {
@@ -62,6 +65,35 @@ func main() {
 	log.Printf("fynanz listening on %s (sqlite: %s, eb: %s)", addr, cfg.DBPath, cfg.EBBaseURL)
 	if err := http.ListenAndServe(addr, srv); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server: %v", err)
+	}
+}
+
+// buildNotifyLoader serves channel configs from the store for the notifier
+// (§7: per-user configuration, plain DB rows).
+func buildNotifyLoader(st *store.Store) notify.Loader {
+	return func(ctx context.Context) ([]notify.Config, error) {
+		userID, err := st.EnsureDefaultUser(ctx)
+		if err != nil {
+			return nil, err
+		}
+		rows, err := st.ListNotificationChannels(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		out := make([]notify.Config, 0, len(rows))
+		for _, r := range rows {
+			events := map[notify.Event]bool{}
+			if r.Events != "" && r.Events != "{}" {
+				_ = json.Unmarshal([]byte(r.Events), &events)
+			}
+			out = append(out, notify.Config{
+				Type:    r.Type,
+				Config:  json.RawMessage(r.Config),
+				Events:  events,
+				Enabled: r.Enabled,
+			})
+		}
+		return out, nil
 	}
 }
 

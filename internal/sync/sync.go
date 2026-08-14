@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	"fynanz/internal/categorize"
 	"fynanz/internal/metrics"
+	"fynanz/internal/notify"
 	"fynanz/internal/store"
 )
 
@@ -20,22 +22,37 @@ type Service struct {
 	store          *store.Store
 	client         *Client
 	rec            metrics.Recorder
+	notifier       notify.Notifier
+	baseURL        string
 	redirectURL    string
 	psuType        string
 	historyDays    int
 	maxConsentDays int
 }
 
-func NewService(st *store.Store, client *Client, rec metrics.Recorder, redirectURL, psuType string, historyDays, maxConsentDays int) *Service {
+// NewService wires the sync layer. notifier may be nil (no notifications);
+// baseURL is the public origin used for notification deep links.
+func NewService(st *store.Store, client *Client, rec metrics.Recorder, notifier notify.Notifier, baseURL, redirectURL, psuType string, historyDays, maxConsentDays int) *Service {
+	if notifier == nil {
+		notifier = notify.Nop{}
+	}
 	return &Service{
 		store:          st,
 		client:         client,
 		rec:            rec,
+		notifier:       notifier,
+		baseURL:        strings.TrimRight(baseURL, "/"),
 		redirectURL:    redirectURL,
 		psuType:        psuType,
 		historyDays:    historyDays,
 		maxConsentDays: maxConsentDays,
 	}
+}
+
+// notifyEvent sends a payload without letting it fail the sync, and survives
+// request cancellation (the scheduler uses a long-lived context anyway).
+func (s *Service) notifyEvent(ctx context.Context, p notify.Payload) {
+	_ = s.notifier.Notify(context.WithoutCancel(ctx), p)
 }
 
 // ActiveLinks returns the user's currently authorized links (scheduler / UI).
@@ -170,22 +187,49 @@ type Result struct {
 
 // SyncLink pulls accounts, balances and transactions for one active link.
 func (s *Service) SyncLink(ctx context.Context, linkID int64) (res Result, err error) {
-	// Record Prometheus outcomes on every exit path (AGENTS.md §8).
+	var userID int64 // declared before the defer, which records outcomes
+	// Record Prometheus outcomes on every exit path (AGENTS.md §8) and fire
+	// the matching notifications (§7): reauth/sync-failed on errors, the
+	// "needs categorization" prompt after a successful run.
 	defer func() {
+		now := time.Now().UTC().Format(time.RFC3339)
 		if err != nil {
 			if res.MarkedReauthNeeded || IsSessionError(err) {
 				s.rec.ReauthNeeded(res.Link.Bank)
+				if res.Link.Bank == "" {
+					return
+				}
+				s.notifyEvent(ctx, notify.Payload{
+					Event:     notify.EventReauthNeeded,
+					Title:     "Bank link needs re-authorization",
+					Message:   fmt.Sprintf("The %s link is no longer authorized (PSD2 sessions expire). Re-authorize to keep syncing.", res.Link.Bank),
+					Account:   res.Link.Bank,
+					Timestamp: now,
+					Link:      s.baseURL + "/links/" + strconv.FormatInt(linkID, 10) + "/reconnect",
+				})
 			} else {
 				s.rec.RunFailed(res.Link.Bank)
+				if res.Link.Bank == "" {
+					return
+				}
+				s.notifyEvent(ctx, notify.Payload{
+					Event:     notify.EventSyncFailed,
+					Title:     "Sync failed",
+					Message:   fmt.Sprintf("Syncing %s failed: %v", res.Link.Bank, err),
+					Account:   res.Link.Bank,
+					Timestamp: now,
+					Link:      s.baseURL,
+				})
 			}
 			return
 		}
 		s.rec.RunSucceeded(res.Link.Bank)
 		s.rec.Ingested(res.Link.Bank, res.TransactionsInserted)
 		s.rec.SetAccounts(res.Link.Bank, res.Accounts)
+		s.notifyUncategorized(ctx, userID, res.Link.Bank, now, res.TransactionsInserted)
 	}()
 
-	userID, err := s.store.EnsureDefaultUser(ctx)
+	userID, err = s.store.EnsureDefaultUser(ctx)
 	if err != nil {
 		return Result{}, err
 	}
@@ -446,6 +490,38 @@ func (s *Service) OverrideCategory(ctx context.Context, txID, categoryID int64) 
 		s.updateUncategorizedGauge(ctx, userID)
 	}
 	return err
+}
+
+// notifyUncategorized sends the real-time prompt (§4/§7) when a sync landed
+// new transactions and the inbox is not empty.
+func (s *Service) notifyUncategorized(ctx context.Context, userID int64, bank, now string, inserted int64) {
+	if inserted <= 0 {
+		return
+	}
+	items, err := s.store.ListUncategorized(ctx, userID, 5)
+	if err != nil || len(items) == 0 {
+		return
+	}
+	first := items[0]
+	msg := fmt.Sprintf("%d transaction(s) from %s need a category", len(items), bank)
+	if first.MerchantNormalized != "" {
+		msg += fmt.Sprintf(" — e.g. %s", first.MerchantNormalized)
+	}
+	if first.Counterparty != "" {
+		msg += fmt.Sprintf(" (%s)", first.Counterparty)
+	}
+	msg += fmt.Sprintf(", %s %s.", FormatMinor(first.AmountMinor, first.Currency), first.Currency)
+	s.notifyEvent(ctx, notify.Payload{
+		Event:       notify.EventNeedsCategory,
+		Title:       "New transactions need a category",
+		Message:     msg,
+		AmountMinor: first.AmountMinor,
+		Currency:    first.Currency,
+		Merchant:    first.MerchantNormalized,
+		Account:     bank,
+		Timestamp:   now,
+		Link:        s.baseURL + "/inbox",
+	})
 }
 
 func (s *Service) updateUncategorizedGauge(ctx context.Context, userID int64) {

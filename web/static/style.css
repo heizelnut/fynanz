@@ -114,7 +114,16 @@ td.wrap {
 .badge.active { background: var(--badge-active-bg); color: var(--ok); }
 .badge.pending_consent { background: var(--badge-pending-bg); color: var(--badge-pending-fg); }
 .badge.expired, .badge.error { background: var(--badge-err-bg); color: var(--err); }
-.badge.revoked, .badge.closed { background: var(--badge-neutral-bg); color: var(--muted); }
+.badge.revoked, .badge.closed, .badge.neutral { background: var(--badge-neutral-bg); color: var(--muted); }
+.check-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .2rem 1rem;
+  width: 100%;
+  color: var(--muted);
+  font-size: .85rem;
+}
+.check-grid label { display: inline-flex; align-items: center; gap: .3rem; }
 .pager {
   display: flex;
   flex-wrap: wrap;
