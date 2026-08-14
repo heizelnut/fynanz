@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -59,6 +60,29 @@ func loadConfig() Config {
 		SyncInterval:   getenvDuration("SYNC_INTERVAL", 24*time.Hour),
 		HistoryDays:    getenvInt("SYNC_HISTORY_DAYS", 90),
 		MaxConsentDays: getenvInt("ENABLE_BANKING_MAX_CONSENT_DAYS", 30),
-		PublicBaseURL:  getenv("PUBLIC_BASE_URL", "http://localhost:8080"),
+		PublicBaseURL:  normalizePublicBase(getenv("PUBLIC_BASE_URL", "http://localhost:8080")),
 	}
+}
+
+// normalizePublicBase guarantees the public origin has a scheme: ntfy
+// click/actions and the consent redirect need absolute URLs, and a user may
+// set PUBLIC_BASE_URL without one (e.g. "fynanz.lab.heiz.cc"). https:// is
+// assumed; http:// only for localhost-style hosts.
+func normalizePublicBase(raw string) string {
+	raw = strings.TrimSpace(strings.TrimRight(raw, "/"))
+	if raw == "" {
+		return "http://localhost:8080"
+	}
+	if strings.Contains(raw, "://") {
+		return raw
+	}
+	host := raw
+	if i := strings.IndexByte(host, '/'); i >= 0 {
+		host = host[:i]
+	}
+	host = strings.ToLower(host)
+	if strings.HasPrefix(host, "localhost") || strings.HasPrefix(host, "127.0.0.1") || strings.HasPrefix(host, "::1") {
+		return "http://" + raw
+	}
+	return "https://" + raw
 }
