@@ -130,8 +130,20 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
     color: var(--muted);
     vertical-align: top;
   }
+  /* Long free-text values: label on top, value below. `.wrap` marks exactly
+     those cells (merchant, details, error); everything else (dates,
+     statuses, amounts) stays label-inline. */
+  td.wrap::before {
+    display: block;
+    margin-right: 0;
+    margin-bottom: .15rem;
+  }
+  td.wrap {
+    padding: .3rem 0 .45rem;
+    max-width: none;
+    min-width: 0;
+  }
   td.num { text-align: left; }
-  td.wrap { max-width: none; min-width: 0; }
   /* First/last-cell padding resets no longer make sense in cards. */
   td:first-child, td:last-child { padding-left: 0; padding-right: 0; }
 }
