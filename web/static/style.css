@@ -99,8 +99,39 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
 .ok-text { color: var(--ok); }
 .panel.attention { border-color: #f0c36d; background: #fffaf0; }
 
+/* Mobile: stack each table row into a card — the column title (from each
+   cell's data-label) repeats inline with its value (AGENTS.md §10). */
 @media (max-width: 720px) {
   .panel { padding: .5rem .6rem; }
   .topbar { gap: .8rem; }
-  table { font-size: .85rem; }
+
+  table, thead, tbody, tr, td { display: block; }
+  thead { display: none; }
+  tr {
+    margin: 0 0 .7rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: .3rem .55rem;
+  }
+  td {
+    border-bottom: none;
+    padding: .28rem 0;
+    white-space: normal;
+  }
+  td::before {
+    content: attr(data-label);
+    display: inline-block;
+    min-width: 6.5em;
+    margin-right: .5rem;
+    font-weight: 600;
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    color: var(--muted);
+    vertical-align: top;
+  }
+  td.num { text-align: left; }
+  td.wrap { max-width: none; min-width: 0; }
+  /* First/last-cell padding resets no longer make sense in cards. */
+  td:first-child, td:last-child { padding-left: 0; padding-right: 0; }
 }

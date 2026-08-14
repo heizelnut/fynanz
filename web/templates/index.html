@@ -22,12 +22,12 @@
     <tbody>
       {{range .Links}}
       <tr>
-        <td class="strong">{{.Bank}}</td>
-        <td><span class="badge {{.Status}}">{{.Status}}</span></td>
-        <td class="muted">{{fmtDate .LastSyncedAt}}</td>
-        <td class="muted">{{fmtDate .ValidUntil}}</td>
-        <td class="muted wrap">{{if .LastError}}{{.LastError}}{{else}}—{{end}}</td>
-        <td class="actions">
+        <td class="strong" data-label="Bank">{{.Bank}}</td>
+        <td data-label="Status"><span class="badge {{.Status}}">{{.Status}}</span></td>
+        <td class="muted" data-label="Last sync">{{fmtDate .LastSyncedAt}}</td>
+        <td class="muted" data-label="Valid until">{{fmtDate .ValidUntil}}</td>
+        <td class="muted wrap" data-label="Error">{{if .LastError}}{{.LastError}}{{else}}—{{end}}</td>
+        <td class="actions" data-label="">
           {{if eq .Status "active"}}<a href="/links/{{.ID}}/sync">Sync now</a>{{end}}
           {{if eq .Status "active"}}
           {{else}}<a href="/links/{{.ID}}/reconnect">Re-connect</a>{{end}}
@@ -50,10 +50,10 @@
     <tbody>
       {{range .Accounts}}
       <tr>
-        <td class="strong">{{.DisplayName}}</td>
-        <td>{{.Iban}}</td>
-        <td>{{.Currency}}</td>
-        <td>{{if .BalanceMinor}}{{fmtAmount .BalanceMinor .Currency}}{{end}}</td>
+        <td class="strong" data-label="Account">{{.DisplayName}}</td>
+        <td data-label="IBAN">{{.Iban}}</td>
+        <td data-label="Currency">{{.Currency}}</td>
+        <td data-label="Balance">{{if .BalanceMinor}}{{fmtAmount .BalanceMinor .Currency}}{{end}}</td>
       </tr>
       {{end}}
     </tbody>
@@ -70,10 +70,10 @@
     <tbody>
       {{range .Uncategorized}}
       <tr>
-        <td class="muted">{{.BookingDate}}</td>
-        <td class="strong">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
-        <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}">{{fmtAmount .AmountMinor .Currency}}</td>
-        <td><a href="/inbox">Categorize →</a></td>
+        <td class="muted" data-label="Date">{{.BookingDate}}</td>
+        <td class="strong" data-label="Merchant">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
+        <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}" data-label="Amount">{{fmtAmount .AmountMinor .Currency}}</td>
+        <td data-label=""><a href="/inbox">Categorize →</a></td>
       </tr>
       {{end}}
     </tbody>

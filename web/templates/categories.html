@@ -17,15 +17,15 @@
     <tbody>
       {{range $row := .CatTxCounts}}
       <tr>
-        <td class="strong">{{$row.Name}}</td>
-        <td class="num muted">{{$row.Count}}</td>
-        <td>
+        <td class="strong" data-label="Name">{{$row.Name}}</td>
+        <td class="num muted" data-label="Transactions">{{$row.Count}}</td>
+        <td data-label="Rename">
           <form class="inline-form" method="post" action="/categories/{{$row.ID}}/rename">
             <input type="text" name="name" value="{{$row.Name}}" required style="width:12em">
             <button>Rename</button>
           </form>
         </td>
-        <td>
+        <td data-label="Merge into">
           <form class="inline-form" method="post" action="/categories/{{$row.ID}}/merge">
             <select name="into">
               {{range $.Categories}}{{if ne .ID $row.ID}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
