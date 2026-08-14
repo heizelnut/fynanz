@@ -171,6 +171,19 @@ type SandboxUser struct {
 	OTP      string `json:"otp"`
 }
 
+// GetApplicationResponse: identifies the app the JWT authenticated as
+// (GET /application) — handy for validating credentials.
+type GetApplicationResponse struct {
+	Name         string   `json:"name"`
+	Description  string   `json:"description"`
+	Kid          string   `json:"kid"`
+	Environment  string   `json:"environment"`
+	RedirectURLs []string `json:"redirect_urls"`
+	Active       bool     `json:"active"`
+	Countries    []string `json:"countries"`
+	Services     []string `json:"services"`
+}
+
 // ErrorResponse is the API error envelope (spec: message required).
 type ErrorResponse struct {
 	Message string `json:"message"`

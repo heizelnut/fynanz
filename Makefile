@@ -1,9 +1,13 @@
 # fynanz dev workflow. Requires: go, air, golang-migrate, golangci-lint.
 DB_PATH ?= ./data/fynanz.db
 
-.PHONY: dev build test lint migrate-up migrate-down migrate-create fmt
+.PHONY: dev build test lint creds migrate-up migrate-down migrate-create fmt
 
-## dev: run the server with hot reload (needs .env with bank creds)
+## creds: verify ENABLE_BANKING_APP_ID + private key against the API
+creds:
+	go run ./cmd/checkcreds
+
+## dev: run the server with hot reload (needs .env with bank creds; run `make creds` first)
 dev:
 	@test -f .env && air || (echo "missing .env — cp .env.example .env"; exit 1)
 

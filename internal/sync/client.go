@@ -207,6 +207,16 @@ func (c *Client) GetTransactions(ctx context.Context, uid string, dateFrom, date
 	}
 }
 
+// GetApplication returns the app the current JWT authenticated as. Useful
+// to verify credentials before starting the server.
+func (c *Client) GetApplication(ctx context.Context) (*GetApplicationResponse, error) {
+	var out GetApplicationResponse
+	if _, err := c.do(ctx, http.MethodGet, "/application", nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ListASPSPs returns banks available for the given country (used to resolve
 // ASPSP names and consent validity limits).
 func (c *Client) ListASPSPs(ctx context.Context, country string) ([]ASPSPData, error) {
