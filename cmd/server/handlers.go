@@ -46,7 +46,7 @@ func newServer(st *store.Store, svc *sync.Service) http.Handler {
 		_, _ = w.Write([]byte("ok"))
 	})
 	r.Handle("/metrics", metrics.Handler())
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(webStatic))))
+	r.Handle("/static/*", noCache(http.StripPrefix("/static/", http.FileServer(http.FS(webStatic)))))
 	return r
 }
 
@@ -80,6 +80,15 @@ type catCount struct {
 }
 
 var defaultUserID int64 = 1 // single implicit v1 user (AGENTS.md §6)
+
+// noCache keeps dev iterations visible: the CSS/JS are embedded in the
+// binary and change on every restart, so let the browser revalidate.
+func noCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
+}
 
 func (h *handlers) index(w http.ResponseWriter, r *http.Request) {
 	data, err := h.page(r, "Dashboard")
