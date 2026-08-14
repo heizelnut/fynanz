@@ -472,7 +472,7 @@ func (s *Service) Reclassify(ctx context.Context) error {
 	transferCatID := s.transferCategoryID(ctx, userID)
 
 	for {
-		txs, err := s.store.ListUncategorized(ctx, userID, batchSize)
+		txs, err := s.store.ListUncategorized(ctx, userID, batchSize, 0)
 		if err != nil {
 			return err
 		}
@@ -549,7 +549,7 @@ func (s *Service) notifyUncategorized(ctx context.Context, userID int64, bank, n
 	if inserted <= 0 {
 		return
 	}
-	items, err := s.store.ListUncategorized(ctx, userID, 5)
+	items, err := s.store.ListUncategorized(ctx, userID, 5, 0)
 	if err != nil || len(items) == 0 {
 		return
 	}

@@ -77,18 +77,62 @@ const txCols = `t.id, t.user_id, t.account_id, t.entry_reference, t.booking_date
 
 const txFrom = `FROM transactions t LEFT JOIN categories c ON c.id = t.category_id`
 
-// RecentTransactions returns transactions for a user, optionally filtered by
-// account, newest first with a stable tiebreaker (booking_date desc, id
-// desc) so pagination is consistent across pages.
-func (s *Store) RecentTransactions(ctx context.Context, userID, accountID int64, limit, offset int) ([]Transaction, error) {
-	q := `SELECT ` + txCols + `, COALESCE(c.name, '') ` + txFrom + ` WHERE t.user_id = ?`
-	var args []any
-	args = append(args, userID)
-	if accountID > 0 {
+// UncategorizedCat is the sentinel for the "no category yet" filter value.
+const UncategorizedCat = -1
+
+// TxFilter narrows transaction listings: account, category
+// (UncategorizedCat for "no category"), booking-date range and a free-text
+// query on merchant/counterparty. Zero values mean "all".
+type TxFilter struct {
+	AccountID  int64
+	CategoryID int64
+	DateFrom   string
+	DateTo     string
+	Query      string
+}
+
+// txWhere builds the shared WHERE clause for listings and counts.
+func txWhere(userID int64, f TxFilter) (string, []any) {
+	q := ` WHERE t.user_id = ?`
+	args := []any{userID}
+	if f.AccountID > 0 {
 		q += ` AND t.account_id = ?`
-		args = append(args, accountID)
+		args = append(args, f.AccountID)
 	}
-	q += ` ORDER BY t.booking_date DESC, t.id DESC LIMIT ? OFFSET ?`
+	if f.CategoryID == UncategorizedCat {
+		q += ` AND t.category_id IS NULL`
+	} else if f.CategoryID != 0 {
+		q += ` AND t.category_id = ?`
+		args = append(args, f.CategoryID)
+	}
+	if f.DateFrom != "" {
+		q += ` AND t.booking_date >= ?`
+		args = append(args, f.DateFrom)
+	}
+	if f.DateTo != "" {
+		q += ` AND t.booking_date <= ?`
+		args = append(args, f.DateTo)
+	}
+	if f.Query != "" {
+		pat := "%" + likeEscape(f.Query) + "%"
+		q += ` AND (t.merchant_normalized LIKE ? ESCAPE '\' OR t.counterparty LIKE ? ESCAPE '\')`
+		args = append(args, pat, pat)
+	}
+	return q, args
+}
+
+// likeEscape neutralises LIKE wildcards so user input matches literally.
+func likeEscape(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s)
+}
+
+// RecentTransactions returns transactions for a user, newest first with a
+// stable tiebreaker (booking_date desc, id desc) so pagination is consistent.
+func (s *Store) RecentTransactions(ctx context.Context, userID int64, f TxFilter, limit, offset int) ([]Transaction, error) {
+	q := `SELECT ` + txCols + `, COALESCE(c.name, '') ` + txFrom
+	where, args := txWhere(userID, f)
+	q += where + ` ORDER BY t.booking_date DESC, t.id DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 
 	rows, err := s.db.QueryContext(ctx, q, args...)
@@ -121,10 +165,11 @@ func scanTxJoined(row interface{ Scan(...any) error }) (Transaction, error) {
 	return t, err
 }
 
-func (s *Store) CountTransactions(ctx context.Context, userID int64) (int64, error) {
+// CountTransactions counts transactions matching the filter (pagination).
+func (s *Store) CountTransactions(ctx context.Context, userID int64, f TxFilter) (int64, error) {
+	where, args := txWhere(userID, f)
 	var n int64
-	err := s.queryRow(ctx,
-		`SELECT COUNT(*) FROM transactions WHERE user_id = ?`, userID).Scan(&n)
+	err := s.queryRow(ctx, `SELECT COUNT(*) FROM transactions t`+where, args...).Scan(&n)
 	return n, err
 }
 
@@ -174,12 +219,12 @@ func (s *Store) ApplyCategoryUpdates(ctx context.Context, userID int64, updates 
 }
 
 // ListUncategorized returns transactions without a category (the inbox), in
-// booking order (most recent first), oldest untouched last.
-func (s *Store) ListUncategorized(ctx context.Context, userID int64, limit int) ([]Transaction, error) {
+// booking order (most recent first), paginated.
+func (s *Store) ListUncategorized(ctx context.Context, userID int64, limit, offset int) ([]Transaction, error) {
 	q := `SELECT ` + txCols + `, COALESCE(c.name, '') ` + txFrom + `
 		WHERE t.user_id = ? AND t.category_id IS NULL
-		ORDER BY t.booking_date DESC, t.id DESC LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, userID, limit)
+		ORDER BY t.booking_date DESC, t.id DESC LIMIT ? OFFSET ?`
+	rows, err := s.db.QueryContext(ctx, q, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("store: uncategorized list: %w", err)
 	}

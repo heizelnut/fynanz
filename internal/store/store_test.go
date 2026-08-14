@@ -139,14 +139,14 @@ func TestUpsertAccountsAndTxDedupe(t *testing.T) {
 		t.Fatalf("re-insert: %d inserted, %d skipped, want 0/2", ins, skip)
 	}
 
-	recent, err := st.RecentTransactions(ctx, uid, 0, 10, 0)
+	recent, err := st.RecentTransactions(ctx, uid, TxFilter{}, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(recent) != 2 || recent[0].EntryReference != "ref-2" {
 		t.Errorf("recent ordering wrong: %+v", recent)
 	}
-	count, _ := st.CountTransactions(ctx, uid)
+	count, _ := st.CountTransactions(ctx, uid, TxFilter{})
 	if count != 2 {
 		t.Errorf("count = %d, want 2", count)
 	}
@@ -191,7 +191,7 @@ func TestCategoryAssignmentAndInbox(t *testing.T) {
 	if n, _ := st.UncategorizedCount(ctx, uid); n != 2 {
 		t.Errorf("uncategorized = %d, want 2", n)
 	}
-	items, err := st.ListUncategorized(ctx, uid, 10)
+	items, err := st.ListUncategorized(ctx, uid, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestMergeCategory(t *testing.T) {
 	if err := st.MergeCategory(ctx, uid, src, dst); err != nil {
 		t.Fatal(err)
 	}
-	txs, _ := st.RecentTransactions(ctx, uid, 0, 10, 0)
+	txs, _ := st.RecentTransactions(ctx, uid, TxFilter{}, 10, 0)
 	for _, tx := range txs {
 		if tx.CategoryID == nil || *tx.CategoryID != dst {
 			t.Errorf("post-merge tx category %v, want %d", tx.CategoryID, dst)
@@ -375,5 +375,86 @@ func TestSettingsCRUD(t *testing.T) {
 	}
 	if v, _ := st.GetSetting(ctx, uid, "eb_app_id"); v != "" {
 		t.Errorf("cleared setting should be empty, got %q", v)
+	}
+}
+
+func TestTxFilters(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+	link, _ := st.CreateLink(ctx, uid, "sandbox", "Mock ASPSP", "FI")
+	ids, _ := st.UpsertAccounts(ctx, uid, link.ID, []AccountInput{
+		{UID: "f1", IdentificationHash: "fh1"},
+		{UID: "f2", IdentificationHash: "fh2"},
+	})
+	g := func(c int64) *int64 { return &c }
+	cats, _ := st.ListCategories(ctx, uid)
+	groceries := cats[1].ID
+
+	txs := []TransactionInput{
+		{EntryReference: "q1", BookingDate: "2026-08-01", AmountMinor: -100, Currency: "EUR", CreditDebit: "DBIT", Counterparty: "S Market", MerchantNormalized: "s market", CategoryID: g(groceries), CategorySource: CatSourceRule},
+		{EntryReference: "q2", BookingDate: "2026-08-05", AmountMinor: -200, Currency: "EUR", CreditDebit: "DBIT", Counterparty: "100% Organic", MerchantNormalized: "100% organic", CategoryID: g(groceries), CategorySource: CatSourceRule},
+		{EntryReference: "q3", BookingDate: "2026-08-10", AmountMinor: 500, Currency: "EUR", CreditDebit: "CRDT", Counterparty: "ACME", MerchantNormalized: "acme", CategoryID: nil},
+		// Same account, different date (July) for range tests.
+		{EntryReference: "q4", BookingDate: "2026-07-20", AmountMinor: -10, Currency: "EUR", CreditDebit: "DBIT", Counterparty: "Train", MerchantNormalized: "train", CategoryID: nil},
+	}
+	for i := range txs {
+		if _, _, err := st.InsertTransactions(ctx, uid, ids["f1"], []TransactionInput{txs[i]}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := st.InsertTransactions(ctx, uid, ids["f2"], []TransactionInput{
+		{EntryReference: "q5", BookingDate: "2026-08-03", AmountMinor: -7, Currency: "EUR", CreditDebit: "DBIT", Counterparty: "S Market", MerchantNormalized: "s market", CategoryID: g(groceries), CategorySource: CatSourceRule},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	count := func(f TxFilter) int64 {
+		n, err := st.CountTransactions(ctx, uid, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	get := func(f TxFilter) []Transaction {
+		tx, err := st.RecentTransactions(ctx, uid, f, 50, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tx
+	}
+
+	if n := count(TxFilter{}); n != 5 {
+		t.Errorf("all = %d, want 5", n)
+	}
+	// Account filter.
+	if n := count(TxFilter{AccountID: ids["f2"]}); n != 1 {
+		t.Errorf("account f2 = %d, want 1", n)
+	}
+	// Category + uncategorized filter.
+	if n := count(TxFilter{CategoryID: groceries}); n != 3 {
+		t.Errorf("category = %d, want 3", n)
+	}
+	if n := count(TxFilter{CategoryID: UncategorizedCat}); n != 2 {
+		t.Errorf("uncategorized = %d, want 2", n)
+	}
+	// Date range.
+	if n := count(TxFilter{DateFrom: "2026-08-01", DateTo: "2026-08-05"}); n != 3 {
+		t.Errorf("aug 1-5 = %d, want 3", n)
+	}
+	// Free-text on merchant/counterparty; literal % must not act as wildcard.
+	if n := count(TxFilter{Query: "100% Or"}); n != 1 {
+		t.Errorf("literal-%% query = %d, want 1", n)
+	}
+	if n := count(TxFilter{Query: "s market"}); n != 2 {
+		t.Errorf("query 's market' = %d, want 2", n)
+	}
+	// Underscore is escaped (plain 'a_c' would match 'acme').
+	if n := count(TxFilter{Query: "a_c"}); n != 0 {
+		t.Errorf("underscore query = %d, want 0", n)
+	}
+	// Combined: account + query.
+	if tx := get(TxFilter{AccountID: ids["f1"], Query: "market"}); len(tx) != 1 {
+		t.Errorf("combined = %d, want 1", len(tx))
 	}
 }

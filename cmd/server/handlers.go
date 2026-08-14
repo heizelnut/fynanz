@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -81,6 +82,13 @@ type pageData struct {
 	UncategorizedN int64
 	Pagination     pagination
 	Dashboard      dashboardData
+	// transactions filters (echo + pagination link base)
+	FilterAccount  string
+	FilterCategory string
+	FilterFrom     string
+	FilterTo       string
+	FilterQ        string
+	PagerBase      string // "/transactions?limit=N&account=…" for page links
 }
 
 // dashboardData is everything the insights panels need (milestone 7); empty
@@ -186,7 +194,7 @@ func noCache(next http.Handler) http.Handler {
 }
 
 func (h *handlers) index(w http.ResponseWriter, r *http.Request) {
-	data, err := h.page(r, "Dashboard", 50, 1)
+	data, err := h.page(r, "Dashboard", 50, 1, store.TxFilter{})
 	if err != nil {
 		httpError(w, err)
 		return
@@ -296,16 +304,59 @@ func (h *handlers) transactions(w http.ResponseWriter, r *http.Request) {
 			page = n
 		}
 	}
-	data, err := h.page(r, "Transactions", limit, page)
+	filter := store.TxFilter{AccountID: strID(r.URL.Query().Get("account"))}
+	var echo pageData
+	echo.FromQ(r) // sets Filter* fields for the filter-form echo
+	switch r.URL.Query().Get("category") {
+	case "uncat":
+		filter.CategoryID = store.UncategorizedCat
+		echo.FilterCategory = "uncat"
+	default:
+		if c := strID(r.URL.Query().Get("category")); c != 0 {
+			filter.CategoryID = c
+		}
+	}
+	filter.DateFrom = r.URL.Query().Get("date_from")
+	filter.DateTo = r.URL.Query().Get("date_to")
+	filter.Query = strings.TrimSpace(r.URL.Query().Get("q"))
+
+	full, err := h.page(r, "Transactions", limit, page, filter)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	data.ActiveNav = "transactions"
-	h.render(w, "transactions.html", data)
+	full.ActiveNav = "transactions"
+	full.FilterAccount, full.FilterCategory = echo.FilterAccount, echo.FilterCategory
+	full.FilterFrom, full.FilterTo, full.FilterQ = echo.FilterFrom, echo.FilterTo, echo.FilterQ
+	full.PagerBase = pagerBase(limit, full.FilterAccount, full.FilterCategory, full.FilterFrom, full.FilterTo, full.FilterQ)
+	h.render(w, "transactions.html", full)
 }
 
-func (h *handlers) page(r *http.Request, title string, limit, page int) (pageData, error) {
+// FromQ fills the filter echo fields (template values) from the query.
+func (d *pageData) FromQ(r *http.Request) {
+	d.FilterAccount = r.URL.Query().Get("account")
+	d.FilterCategory = r.URL.Query().Get("category")
+	d.FilterFrom = r.URL.Query().Get("date_from")
+	d.FilterTo = r.URL.Query().Get("date_to")
+	d.FilterQ = r.URL.Query().Get("q")
+}
+
+// pagerBase builds "/transactions?limit=N&…filters" for page links.
+func pagerBase(limit int, account, category, from, to, q string) string {
+	v := url.Values{}
+	v.Set("limit", strconv.Itoa(limit))
+	for key, val := range map[string]string{
+		"account": account, "category": category,
+		"date_from": from, "date_to": to, "q": q,
+	} {
+		if val != "" {
+			v.Set(key, val)
+		}
+	}
+	return "/transactions?" + v.Encode()
+}
+
+func (h *handlers) page(r *http.Request, title string, limit, page int, filter store.TxFilter) (pageData, error) {
 	var d pageData
 	d.Title = title
 	d.Message = r.URL.Query().Get("msg")
@@ -325,7 +376,7 @@ func (h *handlers) page(r *http.Request, title string, limit, page int) (pageDat
 	d.Accounts = accounts
 	h.accCache = accounts
 
-	count, err := h.store.CountTransactions(ctx, defaultUserID)
+	count, err := h.store.CountTransactions(ctx, defaultUserID, filter)
 	if err != nil {
 		return d, err
 	}
@@ -333,7 +384,7 @@ func (h *handlers) page(r *http.Request, title string, limit, page int) (pageDat
 	d.Pagination = makePagination(page, limit, count)
 
 	offset := (d.Pagination.Current - 1) * limit
-	txs, err := h.store.RecentTransactions(ctx, defaultUserID, 0, limit, offset)
+	txs, err := h.store.RecentTransactions(ctx, defaultUserID, filter, limit, offset)
 	if err != nil {
 		return d, err
 	}
@@ -353,7 +404,7 @@ func (h *handlers) page(r *http.Request, title string, limit, page int) (pageDat
 	d.UncategorizedN = uncat
 
 	// Dashboard surfacing: first few items needing a category (§5).
-	first, err := h.store.ListUncategorized(ctx, defaultUserID, 5)
+	first, err := h.store.ListUncategorized(ctx, defaultUserID, 5, 0)
 	if err != nil {
 		return d, err
 	}
@@ -363,16 +414,36 @@ func (h *handlers) page(r *http.Request, title string, limit, page int) (pageDat
 
 // inbox renders the real-time resolve view (AGENTS.md §4/§10).
 func (h *handlers) inbox(w http.ResponseWriter, r *http.Request) {
-	data, err := h.page(r, "Categorize", 50, 1)
+	limit, page := 50, 1
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+	ctx := r.Context()
+	user := defaultUserID
+	items, err := h.store.ListUncategorized(ctx, user, limit, (page-1)*limit)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
-	items, err := h.store.ListUncategorized(r.Context(), defaultUserID, 100)
+	total, err := h.store.UncategorizedCount(ctx, user)
 	if err != nil {
 		httpError(w, err)
 		return
 	}
+	data, err := h.page(r, "Categorize", limit, page, store.TxFilter{})
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	data.Pagination = makePagination(page, limit, total)
+	data.PagerBase = "/inbox?limit=" + strconv.Itoa(limit)
 	d := inboxPageData{pageData: data, ResolvedCategory: r.URL.Query().Get("done")}
 	d.Uncategorized = items
 	d.ActiveNav = "inbox"
@@ -497,7 +568,7 @@ func (h *handlers) syncOne(w http.ResponseWriter, r *http.Request) {
 
 // categories renders category management (add/rename/merge, AGENTS.md §4).
 func (h *handlers) categories(w http.ResponseWriter, r *http.Request) {
-	data, err := h.page(r, "Categories", 50, 1)
+	data, err := h.page(r, "Categories", 50, 1, store.TxFilter{})
 	if err != nil {
 		httpError(w, err)
 		return
@@ -669,7 +740,7 @@ type ebState struct {
 // registration and as in-app pages). No nav highlighting.
 func (h *handlers) legalPage(title, page string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data, err := h.page(r, title, 50, 1)
+		data, err := h.page(r, title, 50, 1, store.TxFilter{})
 		if err != nil {
 			httpError(w, err)
 			return
@@ -680,7 +751,7 @@ func (h *handlers) legalPage(title, page string) http.HandlerFunc {
 
 // settings renders the notification channels panel (§7 configuration UI).
 func (h *handlers) settings(w http.ResponseWriter, r *http.Request) {
-	data, err := h.page(r, "Settings", 50, 1)
+	data, err := h.page(r, "Settings", 50, 1, store.TxFilter{})
 	if err != nil {
 		httpError(w, err)
 		return
