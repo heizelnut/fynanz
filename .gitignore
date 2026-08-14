@@ -1,0 +1,22 @@
+# Secrets / local config
+.env
+.env.local
+
+# Runtime data (SQLite)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Build artifacts
+bin/
+fynanz
+/cmd/server/server
+
+# Air / dev tooling
+tmp/
+*.log
+
+# OS cruft
+.DS_Store

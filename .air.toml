@@ -1,0 +1,17 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/fynanz ./cmd/server"
+  bin = "./tmp/fynanz"
+  include_ext = ["go", "html", "css", "js"]
+  exclude_dir = ["data", "tmp", "web/static/vendor"]
+  exclude_regex = ["_test\\.go$"]
+  stop_on_error = true
+  delay = 500
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true
