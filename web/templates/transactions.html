@@ -13,7 +13,7 @@
     <select id="f-category" name="category">
       <option value="">All</option>
       {{range .Categories}}<option value="{{.ID}}" {{if eq (printf "%d" .ID) $.FilterCategory}}selected{{end}}>{{.Name}}</option>{{end}}
-      <option value="uncat" {{if eq .FilterCategory "uncat"}}selected{{end}}>Uncategorized</option>
+      <option value="uncat" {{if eq .FilterCategory "uncat"}}selected{{end}}>Needs categorization</option>
     </select>
     <label for="f-from">From</label>
     <input id="f-from" type="date" name="date_from" value="{{.FilterFrom}}">

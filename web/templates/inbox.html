@@ -35,7 +35,7 @@
       <form class="inline-form" hx-post="/inbox/{{.ID}}" hx-swap="none">
         <select name="category_id">
           <option value="" disabled selected>Choose…</option>
-          {{range $.Categories}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+          {{range $.Categories}}{{if ne .Name "Uncategorized"}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
         </select>
         <input type="hidden" name="limit" value="{{$.Pagination.Limit}}">
         <input type="hidden" name="page" value="{{$.Pagination.Current}}">
