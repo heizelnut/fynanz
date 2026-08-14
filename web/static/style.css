@@ -115,7 +115,30 @@ td.wrap {
 .badge.pending_consent { background: var(--badge-pending-bg); color: var(--badge-pending-fg); }
 .badge.expired, .badge.error { background: var(--badge-err-bg); color: var(--err); }
 .badge.revoked, .badge.closed { background: var(--badge-neutral-bg); color: var(--muted); }
-.inline-form { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin-bottom: .8rem; }
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: .4rem .8rem;
+  margin: .6rem 0;
+}
+.pager-info { margin-left: auto; font-size: .85rem; }
+.pager-nav { display: inline-flex; flex-wrap: wrap; gap: .15rem; align-items: center; }
+.pager-nav a, .pager-nav span { padding: .15rem .5rem; font-size: .88rem; }
+.pager-nav a {
+  color: var(--accent);
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface);
+}
+.pager-nav a:hover { border-color: var(--accent); }
+.pager-nav a.current {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
 .inline-form label { color: var(--muted); font-size: .9rem; }
 select, input {
   font: inherit;

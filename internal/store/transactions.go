@@ -77,9 +77,10 @@ const txCols = `t.id, t.user_id, t.account_id, t.entry_reference, t.booking_date
 
 const txFrom = `FROM transactions t LEFT JOIN categories c ON c.id = t.category_id`
 
-// RecentTransactions returns the latest transactions for a user, optionally
-// filtered by account.
-func (s *Store) RecentTransactions(ctx context.Context, userID, accountID int64, limit int) ([]Transaction, error) {
+// RecentTransactions returns transactions for a user, optionally filtered by
+// account, newest first with a stable tiebreaker (booking_date desc, id
+// desc) so pagination is consistent across pages.
+func (s *Store) RecentTransactions(ctx context.Context, userID, accountID int64, limit, offset int) ([]Transaction, error) {
 	q := `SELECT ` + txCols + `, COALESCE(c.name, '') ` + txFrom + ` WHERE t.user_id = ?`
 	var args []any
 	args = append(args, userID)
@@ -87,8 +88,8 @@ func (s *Store) RecentTransactions(ctx context.Context, userID, accountID int64,
 		q += ` AND t.account_id = ?`
 		args = append(args, accountID)
 	}
-	q += ` ORDER BY t.booking_date DESC, t.id DESC LIMIT ?`
-	args = append(args, limit)
+	q += ` ORDER BY t.booking_date DESC, t.id DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
 
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {

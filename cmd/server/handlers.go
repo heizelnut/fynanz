@@ -4,6 +4,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -61,6 +62,71 @@ type pageData struct {
 	Categories     []store.Category
 	Uncategorized  []store.Transaction
 	UncategorizedN int64
+	Pagination     pagination
+}
+
+// pagination describes one page of a transaction listing.
+// Pages holds page numbers to render (-1 marks an ellipsis gap).
+type pagination struct {
+	Current    int
+	Prev       int // 0 when there is none
+	Next       int // 0 when there is none
+	TotalPages int64
+	Total      int64
+	Limit      int
+	From       int64
+	To         int64
+	Pages      []int
+}
+
+// makePagination computes the pager for (page, limit) over total items,
+// with a window of page numbers around the current one and ellipsis gaps.
+func makePagination(page, limit int, total int64) pagination {
+	p := pagination{Current: page, Limit: limit, Total: total}
+	if total <= 0 {
+		p.TotalPages = 1
+		p.Pages = []int{1}
+		return p
+	}
+	p.TotalPages = (total + int64(limit) - 1) / int64(limit)
+	if p.Current < 1 {
+		p.Current = 1
+	}
+	if int64(p.Current) > p.TotalPages {
+		p.Current = int(p.TotalPages)
+	}
+	p.From = int64(p.Current-1)*int64(p.Limit) + 1
+	p.To = int64(p.Current) * int64(p.Limit)
+	if p.To > total {
+		p.To = total
+	}
+	if p.Current > 1 {
+		p.Prev = p.Current - 1
+	}
+	if int64(p.Current) < p.TotalPages {
+		p.Next = p.Current + 1
+	}
+
+	// Windowed page numbers: edges always present, +/-2 around current,
+	// -1 where a gap needs an ellipsis.
+	set := map[int]bool{1: true, int(p.TotalPages): true}
+	for n := p.Current - 2; n <= p.Current+2; n++ {
+		if n >= 1 && n <= int(p.TotalPages) {
+			set[n] = true
+		}
+	}
+	var nums []int
+	for n := range set {
+		nums = append(nums, n)
+	}
+	sort.Ints(nums)
+	for i, n := range nums {
+		if i > 0 && n-nums[i-1] > 1 {
+			p.Pages = append(p.Pages, -1)
+		}
+		p.Pages = append(p.Pages, n)
+	}
+	return p
 }
 
 type inboxPageData struct {
@@ -91,7 +157,7 @@ func noCache(next http.Handler) http.Handler {
 }
 
 func (h *handlers) index(w http.ResponseWriter, r *http.Request) {
-	data, err := h.page(r, "Dashboard")
+	data, err := h.page(r, "Dashboard", 50, 1)
 	if err != nil {
 		httpError(w, err)
 		return
@@ -100,7 +166,18 @@ func (h *handlers) index(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handlers) transactions(w http.ResponseWriter, r *http.Request) {
-	data, err := h.page(r, "Transactions")
+	limit, page := 50, 1
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 500 {
+			limit = n
+		}
+	}
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+	data, err := h.page(r, "Transactions", limit, page)
 	if err != nil {
 		httpError(w, err)
 		return
@@ -108,7 +185,7 @@ func (h *handlers) transactions(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "transactions.html", data)
 }
 
-func (h *handlers) page(r *http.Request, title string) (pageData, error) {
+func (h *handlers) page(r *http.Request, title string, limit, page int) (pageData, error) {
 	var d pageData
 	d.Title = title
 	d.Message = r.URL.Query().Get("msg")
@@ -128,17 +205,19 @@ func (h *handlers) page(r *http.Request, title string) (pageData, error) {
 	d.Accounts = accounts
 	h.accCache = accounts
 
-	txs, err := h.store.RecentTransactions(ctx, defaultUserID, 0, 50)
-	if err != nil {
-		return d, err
-	}
-	d.Txs = txs
-
 	count, err := h.store.CountTransactions(ctx, defaultUserID)
 	if err != nil {
 		return d, err
 	}
 	d.TxCount = count
+	d.Pagination = makePagination(page, limit, count)
+
+	offset := (d.Pagination.Current - 1) * limit
+	txs, err := h.store.RecentTransactions(ctx, defaultUserID, 0, limit, offset)
+	if err != nil {
+		return d, err
+	}
+	d.Txs = txs
 
 	cats, err := h.store.ListCategories(ctx, defaultUserID)
 	if err != nil {
@@ -164,7 +243,7 @@ func (h *handlers) page(r *http.Request, title string) (pageData, error) {
 
 // inbox renders the real-time resolve view (AGENTS.md §4/§10).
 func (h *handlers) inbox(w http.ResponseWriter, r *http.Request) {
-	data, err := h.page(r, "Categorize")
+	data, err := h.page(r, "Categorize", 50, 1)
 	if err != nil {
 		httpError(w, err)
 		return
@@ -297,7 +376,7 @@ func (h *handlers) syncOne(w http.ResponseWriter, r *http.Request) {
 
 // categories renders category management (add/rename/merge, AGENTS.md §4).
 func (h *handlers) categories(w http.ResponseWriter, r *http.Request) {
-	data, err := h.page(r, "Categories")
+	data, err := h.page(r, "Categories", 50, 1)
 	if err != nil {
 		httpError(w, err)
 		return

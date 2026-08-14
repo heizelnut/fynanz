@@ -113,7 +113,7 @@ func TestFullThreeLeggedFlow(t *testing.T) {
 		t.Errorf("balance = %v, want 99900", a.BalanceMinor)
 	}
 
-	txs, err := st.RecentTransactions(ctx, link.UserID, 0, 10)
+	txs, err := st.RecentTransactions(ctx, link.UserID, 0, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,7 +224,7 @@ func TestRuleAndTransferClassification(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	txs, _ := st.RecentTransactions(ctx, uid, 0, 10)
+	txs, _ := st.RecentTransactions(ctx, uid, 0, 10, 0)
 	byRef := map[string]store.Transaction{}
 	for _, t := range txs {
 		byRef[t.EntryReference] = t
@@ -274,7 +274,7 @@ func TestRuleAndTransferClassification(t *testing.T) {
 	if res.TransactionsInserted != 1 {
 		t.Errorf("second sync inserted %d, want 1", res.TransactionsInserted)
 	}
-	txs, _ = st.RecentTransactions(ctx, uid, 0, 10)
+	txs, _ = st.RecentTransactions(ctx, uid, 0, 10, 0)
 	for _, tx := range txs {
 		if tx.EntryReference == "t-mystery2" {
 			if tx.CategoryID == nil || *tx.CategoryID != groceries {

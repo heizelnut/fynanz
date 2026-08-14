@@ -9,6 +9,16 @@
     <button type="submit">Apply</button>
   </form>
   {{if .Txs}}
+  <div class="pager">
+    <span class="pager-info muted">{{if gt .Pagination.Total 0}}Showing {{.Pagination.From}}–{{.Pagination.To}} of {{.Pagination.Total}}{{else}}No transactions{{end}}</span>
+    {{if gt .Pagination.TotalPages 1}}
+    <nav class="pager-nav">
+      {{if .Pagination.Prev}}<a href="/transactions?limit={{.Pagination.Limit}}&amp;page={{.Pagination.Prev}}">« Prev</a>{{else}}<span class="muted">« Prev</span>{{end}}
+      {{range $n := .Pagination.Pages}}{{if eq $n -1}}<span class="muted">…</span>{{else}}<a class="{{if eq $n $.Pagination.Current}}current{{end}}" href="/transactions?limit={{$.Pagination.Limit}}&amp;page={{$n}}">{{$n}}</a>{{end}}{{end}}
+      {{if .Pagination.Next}}<a href="/transactions?limit={{.Pagination.Limit}}&amp;page={{.Pagination.Next}}">Next »</a>{{else}}<span class="muted">Next »</span>{{end}}
+    </nav>
+    {{end}}
+  </div>
   <table>
     <thead>
       <tr><th>Date</th><th>Account</th><th>Counterparty</th><th>Details</th><th class="num">Amount</th><th>Category</th></tr>

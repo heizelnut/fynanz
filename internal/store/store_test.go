@@ -139,7 +139,7 @@ func TestUpsertAccountsAndTxDedupe(t *testing.T) {
 		t.Fatalf("re-insert: %d inserted, %d skipped, want 0/2", ins, skip)
 	}
 
-	recent, err := st.RecentTransactions(ctx, uid, 0, 10)
+	recent, err := st.RecentTransactions(ctx, uid, 0, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestMergeCategory(t *testing.T) {
 	if err := st.MergeCategory(ctx, uid, src, dst); err != nil {
 		t.Fatal(err)
 	}
-	txs, _ := st.RecentTransactions(ctx, uid, 0, 10)
+	txs, _ := st.RecentTransactions(ctx, uid, 0, 10, 0)
 	for _, tx := range txs {
 		if tx.CategoryID == nil || *tx.CategoryID != dst {
 			t.Errorf("post-merge tx category %v, want %d", tx.CategoryID, dst)
