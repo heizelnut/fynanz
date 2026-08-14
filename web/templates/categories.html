@@ -15,20 +15,20 @@
       <tr><th>Name</th><th class="num">Transactions</th><th>Rename</th><th>Merge into…</th></tr>
     </thead>
     <tbody>
-      {{range .CatTxCounts}}
+      {{range $row := .CatTxCounts}}
       <tr>
-        <td class="strong">{{.Name}}</td>
-        <td class="num muted">{{.Count}}</td>
+        <td class="strong">{{$row.Name}}</td>
+        <td class="num muted">{{$row.Count}}</td>
         <td>
-          <form class="inline-form" method="post" action="/categories/{{.ID}}/rename">
-            <input type="text" name="name" value="{{.Name}}" required style="width:12em">
+          <form class="inline-form" method="post" action="/categories/{{$row.ID}}/rename">
+            <input type="text" name="name" value="{{$row.Name}}" required style="width:12em">
             <button>Rename</button>
           </form>
         </td>
         <td>
-          <form class="inline-form" method="post" action="/categories/{{.ID}}/merge">
+          <form class="inline-form" method="post" action="/categories/{{$row.ID}}/merge">
             <select name="into">
-              {{range $.Categories}}{{if ne .ID $.ID}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
+              {{range $.Categories}}{{if ne .ID $row.ID}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
             </select>
             <button class="danger" onclick="return confirm('Merge all transactions + rules into the target and delete this category?')">Merge</button>
           </form>

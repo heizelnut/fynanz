@@ -75,6 +75,7 @@ type categoryPageData struct {
 
 type catCount struct {
 	ID    int64
+	Name  string
 	Count int64
 }
 
@@ -310,7 +311,7 @@ func (h *handlers) categories(w http.ResponseWriter, r *http.Request) {
 	_ = rows.Err()
 	var cc []catCount
 	for _, c := range data.Categories {
-		cc = append(cc, catCount{ID: c.ID, Count: counts[c.ID]})
+		cc = append(cc, catCount{ID: c.ID, Name: c.Name, Count: counts[c.ID]})
 	}
 	h.render(w, "categories.html", categoryPageData{pageData: data, CatTxCounts: cc})
 }
