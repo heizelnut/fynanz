@@ -26,7 +26,7 @@
         <td data-label="Status"><span class="badge {{.Status}}">{{.Status}}</span></td>
         <td class="muted" data-label="Last sync">{{fmtDate .LastSyncedAt}}</td>
         <td class="muted" data-label="Valid until">{{fmtDate .ValidUntil}}</td>
-        <td class="muted wrap" data-label="Error">{{if .LastError}}{{.LastError}}{{else}}—{{end}}</td>
+        <td class="muted wrap mono copyable" data-label="Error">{{if .LastError}}{{.LastError}}{{else}}—{{end}}</td>
         <td class="actions" data-label="">
           {{if eq .Status "active"}}<a href="/links/{{.ID}}/sync">Sync now</a>{{end}}
           {{if eq .Status "active"}}
@@ -50,8 +50,8 @@
     <tbody>
       {{range .Accounts}}
       <tr>
-        <td class="strong" data-label="Account">{{.DisplayName}}</td>
-        <td data-label="IBAN">{{.Iban}}</td>
+        <td class="strong mono copyable" data-label="Account">{{.DisplayName}}</td>
+        <td class="mono copyable" data-label="IBAN">{{if .Iban}}{{.Iban}}{{else}}—{{end}}</td>
         <td data-label="Currency">{{.Currency}}</td>
         <td data-label="Balance">{{if .BalanceMinor}}{{fmtAmount .BalanceMinor .Currency}}{{end}}</td>
       </tr>
@@ -71,7 +71,7 @@
       {{range .Uncategorized}}
       <tr>
         <td class="muted" data-label="Date">{{.BookingDate}}</td>
-        <td class="strong" data-label="Merchant">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
+        <td class="strong mono copyable" data-label="Merchant">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
         <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}" data-label="Amount">{{fmtAmount .AmountMinor .Currency}}</td>
         <td data-label=""><a href="/inbox">Categorize →</a></td>
       </tr>

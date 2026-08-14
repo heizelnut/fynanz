@@ -17,9 +17,9 @@
       {{range .Txs}}
       <tr>
         <td class="muted" data-label="Date">{{.BookingDate}}</td>
-        <td class="muted" data-label="Account">{{accountName .AccountID}}</td>
-        <td class="strong wrap" data-label="Merchant">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
-        <td class="muted wrap" data-label="Details">{{.RemittanceInformation}}</td>
+        <td class="muted mono copyable" data-label="Account">{{accountName .AccountID}}</td>
+        <td class="strong wrap mono copyable" data-label="Merchant">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
+        <td class="muted wrap mono copyable" data-label="Details">{{.RemittanceInformation}}</td>
         <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}" data-label="Amount">{{fmtAmount .AmountMinor .Currency}}</td>
         <td id="catcell-{{.ID}}" data-label="Category">
           {{if .CategoryName}}

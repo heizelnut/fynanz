@@ -15,8 +15,8 @@
       {{range .Uncategorized}}
       <tr id="tx-{{.ID}}">
         <td class="muted" data-label="Date">{{.BookingDate}}</td>
-        <td class="strong wrap" data-label="Merchant">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
-        <td class="muted wrap" data-label="Details">{{.RemittanceInformation}}</td>
+        <td class="strong wrap mono copyable" data-label="Merchant">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
+        <td class="muted wrap mono copyable" data-label="Details">{{.RemittanceInformation}}</td>
         <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}" data-label="Amount">{{fmtAmount .AmountMinor .Currency}}</td>
         <td data-label="Category">
           <form class="inline-form" hx-post="/inbox/{{.ID}}" hx-target="#tx-{{.ID}}" hx-swap="outerHTML">

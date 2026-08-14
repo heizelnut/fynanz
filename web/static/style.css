@@ -96,6 +96,32 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
   text-align: center;
 }
 .uncat { color: var(--err); font-size: .8rem; }
+
+/* Copyable identifier/text fields: monospace + click-to-copy affordance
+   (logic in app.js). Slightly smaller face for mono density. */
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: .92em;
+}
+.copyable { cursor: copy; }
+.copyable:hover { text-decoration: underline dotted; }
+.copyable.copied { position: relative; }
+.copyable.copied::after {
+  content: "copied ✓";
+  position: absolute;
+  left: 0;
+  top: -1.3em;
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--ok);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: .1em .45em;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .ok-text { color: var(--ok); }
 .panel.attention { border-color: #f0c36d; background: #fffaf0; }
 
