@@ -1,0 +1,63 @@
+// Privacy policy — served at /privacy (prod-app registration requires a
+// public URL; once the app is reachable behind your Traefik domain, this
+// page IS the policy). Edit the [placeholders] before going live.
+{{define "content"}}
+<section class="panel">
+  <h2>Privacy policy</h2>
+  <p class="muted">Last updated: 14 Aug 2026</p>
+
+  <h3>1. Data controller</h3>
+  <p>This application ("fynanz") is self-hosted and operated for its own
+  user by <em>[your name]</em>, contact: <em>[your email]</em>. It has no
+  operators beyond that person, and no third-party hosting is involved:
+  the database lives on the user's own infrastructure (typically a
+  home server behind Tailscale/Traefik).</p>
+
+  <h3>2. Data processed</h3>
+  <p>To provide the service, the app processes:</p>
+  <ul>
+    <li>bank account metadata and transaction history, retrieved from your
+        banks through <strong>Enable Banking</strong> (the open-banking
+        aggregator) after you authorize access (PSD2 consent),</li>
+    <li>categories, categorization rules and notification-channel settings
+        you create in the app,</li>
+    <li>no authentication data — v1 has no login; access to the app is
+        controlled by your network boundary (Tailscale, Traefik).</li>
+  </ul>
+
+  <h3>3. Purposes and legal basis</h3>
+  <p>Data is processed solely to provide the dashboard you asked for
+  (aggregation, categorization, insights) at your direction. Bank data is
+  fetched only from the accounts you whitelist in Restricted Production
+  mode, and only while your consent sessions are active.</p>
+
+  <h3>4. Storage and retention</h3>
+  <p>All data is stored in a single local SQLite file on your own
+  infrastructure. It is retained for as long as you use the application.
+  Deleting the app (or its database file) erases your copies; your banks'
+  records are governed by their own policies. Consent sessions expire per
+  PSD2 and are re-authorized by you.</p>
+
+  <h3>5. Recipients and subprocessors</h3>
+  <ul>
+    <li><strong>Enable Banking</strong> — receives your bank credentials
+        and data in the course of fetching it (their privacy policy at
+        enablebanking.com applies to that transmission).</li>
+    <li><strong>Your banks</strong> — the original sources of the data.</li>
+    <li><strong>Notification endpoints you configure</strong> (ntfy topic,
+        webhook URL) — receive event summaries (e.g. "new transaction needs
+        a category") with no bank credentials.</li>
+  </ul>
+
+  <h3>6. Your rights</h3>
+  <p>Under the GDPR you have the right to access, rectify, erase and
+  receive a copy of your data. Because the app is self-hosted, these are
+  exercised directly: everything is visible in the app, and erasure means
+  removing the database file (backup first if needed). Contact
+  <em>[your email]</em> with any question.</p>
+
+  <h3>7. Changes</h3>
+  <p>This policy changes as the app evolves; the current version is always
+  served at this URL.</p>
+</section>
+{{end}}

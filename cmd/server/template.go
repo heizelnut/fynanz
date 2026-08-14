@@ -30,7 +30,7 @@ func mustStatic() fs.FS {
 // (base + partials + page) so every page's {{define "content"}} is
 // unambiguous — parsing all pages in one set would make the last definition
 // win for every request.
-var pageFiles = []string{"index.html", "transactions.html", "inbox.html", "categories.html", "settings.html"}
+var pageFiles = []string{"index.html", "transactions.html", "inbox.html", "categories.html", "settings.html", "terms.html", "privacy.html"}
 
 // loadTemplates parses one template set per page from the embedded FS.
 func (h *handlers) loadTemplates() error {

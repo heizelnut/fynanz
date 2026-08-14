@@ -83,6 +83,8 @@ body {
    both; desktop hides the code, mobile hides the full name). */
 .nav-short { display: none; }
 .count { margin-left: auto; color: var(--muted); font-size: .85rem; }
+.footer { padding: 0 1rem 1rem; font-size: .8rem; text-align: center; }
+.footer a { color: var(--muted); }
 .flash { padding: .5rem .8rem; margin: .6rem 1rem 0; border-radius: 6px; font-size: .9rem; }
 .flash.ok { background: var(--flash-ok-bg); color: var(--ok); }
 .flash.err { background: var(--flash-err-bg); color: var(--err); }
@@ -355,3 +357,8 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
   /* First/last-cell padding resets no longer make sense in cards. */
   td:first-child, td:last-child { padding-left: 0; padding-right: 0; }
 }
+
+/* Legal documents */
+.panel h3 { font-size: .95rem; margin: 1.1rem 0 .35rem; }
+.panel ul { margin: .3rem 0 .6rem; padding-left: 1.2rem; }
+.panel li { margin: .2rem 0; }

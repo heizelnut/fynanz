@@ -44,6 +44,8 @@ func newServer(st *store.Store, svc *sync.Service) http.Handler {
 	r.Post("/categories/{catID}/rename", h.categoriesRename)
 	r.Post("/categories/{catID}/merge", h.categoriesMerge)
 	r.Get("/settings", h.settings)
+	r.Get("/terms", h.legalPage("Terms of service", "terms.html"))
+	r.Get("/privacy", h.legalPage("Privacy policy", "privacy.html"))
 	r.Post("/settings/notifications", h.notificationsAdd)
 	r.Post("/settings/notifications/{chID}/delete", h.notificationsDelete)
 	r.Post("/links", h.createLink)
@@ -516,6 +518,19 @@ func (h *handlers) categories(w http.ResponseWriter, r *http.Request) {
 	}
 	data.ActiveNav = "categories"
 	h.render(w, "categories.html", categoryPageData{pageData: data, CatTxCounts: cc})
+}
+
+// legalPage renders the terms/privacy documents (used by the prod-app
+// registration and as in-app pages). No nav highlighting.
+func (h *handlers) legalPage(title, page string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		data, err := h.page(r, title, 50, 1)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		h.render(w, page, data)
+	}
 }
 
 // settings renders the notification channels panel (§7 configuration UI).

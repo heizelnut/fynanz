@@ -1,0 +1,48 @@
+// Terms of service — served at /terms (prod-app registration requires a
+// public URL). Edit the [placeholders] before going live.
+{{define "content"}}
+<section class="panel">
+  <h2>Terms of service</h2>
+  <p class="muted">Last updated: 14 Aug 2026</p>
+
+  <h3>1. Nature of the service</h3>
+  <p>fynanz is a self-hosted transaction dashboard operated by
+  <em>[your name]</em> for their own use. It aggregates bank transaction
+  history via open banking, categorizes it, and displays the results. It is
+  provided on a best-effort basis for informational purposes; it is not
+  budgeting, accounting, tax or investment advice.</p>
+
+  <h3>2. Your data, your infrastructure</h3>
+  <p>The application runs on your own infrastructure. All transaction data
+  is stored locally on it. You control access to it through your network
+  boundary (Tailscale / Traefik); v1 has no login screen by design.</p>
+
+  <h3>3. Bank access and consent</h3>
+  <p>Account data is fetched through Enable Banking using the accounts you
+  explicitly whitelist and the consent you grant to your banks (PSD2).
+  Consents expire and are refreshed by you. You may revoke access at any
+  time: revoke the consent in your banking app or remove the bank link in
+  fynanz (and remove the app in the Enable Banking control panel if you
+  wish).</p>
+
+  <h3>4. Accurate data</h3>
+  <p>Transaction data comes from the banks as-is and can contain delays,
+  omissions or formatting quirks; the app's categorization is rule-based and
+  can be wrong. Don't rely on it for anything where a mistake matters
+  without verifying against the bank.</p>
+
+  <h3>5. No warranties, no liability</h3>
+  <p>The software is provided "as is" without warranties of any kind. To the
+  fullest extent permitted by law, the operator is not liable for any loss
+  (including financial loss) arising from its use, data loss, or
+  unavailability of third-party services it depends on (Enable Banking,
+  banks, notification endpoints).</p>
+
+  <h3>6. Third-party terms</h3>
+  <p>Use of Enable Banking and of your banks' online services remains
+  subject to their own terms and privacy policies.</p>
+
+  <h3>7. Changes</h3>
+  <p>The current version of these terms is always served at this URL.</p>
+</section>
+{{end}}
