@@ -135,9 +135,9 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
 @media (max-width: 720px) {
   .panel { padding: .5rem .6rem; }
   .topbar { gap: .8rem; }
-  .topbar nav { margin: 0 .45rem; }
+  .topbar nav { margin: 0 .9rem; }
   .nav-full { display: none; }
-  .nav-short { display: inline; font-weight: 700; }
+  .nav-short { display: inline; }
 
   table, thead, tbody, tr, td { display: block; }
   thead { display: none; }
