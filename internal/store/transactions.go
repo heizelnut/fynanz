@@ -165,6 +165,28 @@ func scanTxJoined(row interface{ Scan(...any) error }) (Transaction, error) {
 	return t, err
 }
 
+// AllTransactions returns every transaction matching the filter (no page
+// limit) — used by the CSV export.
+func (s *Store) AllTransactions(ctx context.Context, userID int64, f TxFilter) ([]Transaction, error) {
+	q := `SELECT ` + txCols + `, COALESCE(c.name, '') ` + txFrom
+	where, args := txWhere(userID, f)
+	q += where + ` ORDER BY t.booking_date DESC, t.id DESC`
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: all transactions: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Transaction
+	for rows.Next() {
+		t, err := scanTxJoined(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // CountTransactions counts transactions matching the filter (pagination).
 func (s *Store) CountTransactions(ctx context.Context, userID int64, f TxFilter) (int64, error) {
 	where, args := txWhere(userID, f)

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/rsa"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -52,6 +53,10 @@ func newServer(st *store.Store, svc *sync.Service, cfg Config) http.Handler {
 	r.Get("/privacy", h.legalPage("Privacy policy", "privacy.html"))
 	r.Post("/settings/notifications", h.notificationsAdd)
 	r.Post("/settings/notifications/{chID}/delete", h.notificationsDelete)
+	r.Get("/notifications", h.notifications)
+	r.Post("/notifications", h.notificationsAdd)
+	r.Post("/notifications/{chID}/delete", h.notificationsDelete)
+	r.Get("/transactions/export", h.exportTransactions)
 	r.Post("/settings/enablebanking", h.ebSave)
 	r.Post("/settings/enablebanking/validate", h.ebValidate)
 	r.Post("/settings/enablebanking/reset", h.ebReset)
@@ -90,6 +95,7 @@ type pageData struct {
 	FilterTo       string
 	FilterQ        string
 	PagerBase      string // "/transactions?limit=N&account=…" for page links
+	ExportQS       string // filter-only query string for the CSV export link
 }
 
 // dashboardData is everything the insights panels need (milestone 7); empty
@@ -352,6 +358,7 @@ func (h *handlers) transactions(w http.ResponseWriter, r *http.Request) {
 	full.FilterAccount, full.FilterCategory = echo.FilterAccount, echo.FilterCategory
 	full.FilterFrom, full.FilterTo, full.FilterQ = echo.FilterFrom, echo.FilterTo, echo.FilterQ
 	full.PagerBase = pagerBase(limit, full.FilterAccount, full.FilterCategory, full.FilterFrom, full.FilterTo, full.FilterQ)
+	full.ExportQS = filterQS(full.FilterAccount, full.FilterCategory, full.FilterFrom, full.FilterTo, full.FilterQ)
 	h.render(w, "transactions.html", full)
 }
 
@@ -362,6 +369,20 @@ func (d *pageData) FromQ(r *http.Request) {
 	d.FilterFrom = r.URL.Query().Get("date_from")
 	d.FilterTo = r.URL.Query().Get("date_to")
 	d.FilterQ = r.URL.Query().Get("q")
+}
+
+// filterQS builds the query string for the export link (no limit/page).
+func filterQS(account, category, from, to, q string) string {
+	v := url.Values{}
+	for key, val := range map[string]string{
+		"account": account, "category": category,
+		"date_from": from, "date_to": to, "q": q,
+	} {
+		if val != "" {
+			v.Set(key, val)
+		}
+	}
+	return v.Encode()
 }
 
 // pagerBase builds "/transactions?limit=N&…filters" for page links.
@@ -806,14 +827,91 @@ func (h *handlers) legalPage(title, page string) http.HandlerFunc {
 	}
 }
 
-// settings renders the notification channels panel (§7 configuration UI).
-func (h *handlers) settings(w http.ResponseWriter, r *http.Request) {
-	data, err := h.page(r, "Settings", 50, 1, store.TxFilter{})
+// txFilterFromQuery parses the transactions filter bar into a TxFilter.
+func txFilterFromQuery(v url.Values) store.TxFilter {
+	f := store.TxFilter{AccountID: strID(v.Get("account"))}
+	switch v.Get("category") {
+	case "uncat":
+		f.CategoryID = store.UncategorizedCat
+	default:
+		if c := strID(v.Get("category")); c != 0 {
+			f.CategoryID = c
+		}
+	}
+	f.DateFrom = v.Get("date_from")
+	f.DateTo = v.Get("date_to")
+	f.Query = strings.TrimSpace(v.Get("q"))
+	return f
+}
+
+// exportTransactions streams every transaction matching the current filters
+// as CSV (RFC 4180, quoted): amounts in decimal form, discovery-friendly.
+func (h *handlers) exportTransactions(w http.ResponseWriter, r *http.Request) {
+	filter := txFilterFromQuery(r.URL.Query())
+	rows, err := h.store.AllTransactions(r.Context(), defaultUserID, filter)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	accs, err := h.store.ListAccounts(r.Context(), defaultUserID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	accName := map[int64]string{}
+	for _, a := range accs {
+		accName[a.ID] = a.DisplayName()
+	}
+
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition",
+		fmt.Sprintf(`attachment; filename="fynanz-transactions-%s.csv"`, time.Now().Format("2006-01-02")))
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"date", "account", "merchant", "details", "amount", "currency", "credit_debit", "category", "reference", "status"})
+	for _, t := range rows {
+		row := []string{
+			t.BookingDate,
+			accName[t.AccountID],
+			firstNonEmpty(t.MerchantNormalized, t.Counterparty),
+			t.RemittanceInformation,
+			sync.FormatMinor(t.AmountMinor, t.Currency),
+			t.Currency,
+			t.CreditDebit,
+			t.CategoryName,
+			t.EntryReference,
+			t.Status,
+		}
+		if err := cw.Write(row); err != nil {
+			httpError(w, err)
+			return
+		}
+	}
+	cw.Flush()
+}
+
+// notifications renders the channel configuration page (§7).
+func (h *handlers) notifications(w http.ResponseWriter, r *http.Request) {
+	data, err := h.page(r, "Notifications", 50, 1, store.TxFilter{})
 	if err != nil {
 		httpError(w, err)
 		return
 	}
 	ch, err := h.store.ListNotificationChannels(r.Context(), defaultUserID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	n := struct {
+		pageData
+		Channels []store.NotificationChannel
+	}{pageData: data, Channels: ch}
+	n.ActiveNav = "notifications"
+	h.render(w, "notifications.html", n)
+}
+
+// settings renders the Enable Banking configuration UI.
+func (h *handlers) settings(w http.ResponseWriter, r *http.Request) {
+	data, err := h.page(r, "Settings", 50, 1, store.TxFilter{})
 	if err != nil {
 		httpError(w, err)
 		return
@@ -825,13 +923,8 @@ func (h *handlers) settings(w http.ResponseWriter, r *http.Request) {
 	}
 	settingsData := struct {
 		pageData
-		Channels []store.NotificationChannel
-		EB       ebState
-	}{
-		pageData: data,
-		Channels: ch,
-		EB:       eb,
-	}
+		EB ebState
+	}{pageData: data, EB: eb}
 	settingsData.ActiveNav = "settings"
 	h.render(w, "settings.html", settingsData)
 }
@@ -843,7 +936,7 @@ func (h *handlers) settings(w http.ResponseWriter, r *http.Request) {
 func (h *handlers) notificationsAdd(w http.ResponseWriter, r *http.Request) {
 	typ := r.FormValue("type")
 	if typ != "ntfy" && typ != "webhook" {
-		http.Redirect(w, r, "/settings?err=unknown+channel+type", http.StatusSeeOther)
+		http.Redirect(w, r, "/notifications?err=unknown+channel+type", http.StatusSeeOther)
 		return
 	}
 	// Eagerly validate the config through the backend's own factory, so a
@@ -873,7 +966,7 @@ func (h *handlers) notificationsAdd(w http.ResponseWriter, r *http.Request) {
 		httpRedirErr(w, r, err)
 		return
 	}
-	http.Redirect(w, r, "/settings?msg=notification+channel+added", http.StatusSeeOther)
+	http.Redirect(w, r, "/notifications?msg=notification+channel+added", http.StatusSeeOther)
 }
 
 func (h *handlers) notificationsDelete(w http.ResponseWriter, r *http.Request) {
@@ -882,7 +975,7 @@ func (h *handlers) notificationsDelete(w http.ResponseWriter, r *http.Request) {
 		httpRedirErr(w, r, err)
 		return
 	}
-	http.Redirect(w, r, "/settings?msg=channel+removed", http.StatusSeeOther)
+	http.Redirect(w, r, "/notifications?msg=channel+removed", http.StatusSeeOther)
 }
 
 func (h *handlers) categoriesCreate(w http.ResponseWriter, r *http.Request) {

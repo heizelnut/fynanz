@@ -434,3 +434,7 @@ button.linkbtn {
 .verify.err { background: var(--flash-err-bg); color: var(--err); }
 .err-text { color: var(--err); }
 button.neutral { background: var(--surface); color: var(--fg); }
+
+/* CSV export button in the transactions filter bar */
+.export-btn { font-size: .88rem; margin-left: auto; border: 1px solid var(--line); border-radius: 5px; padding: .22rem .55rem; }
+.export-btn:hover { border-color: var(--accent); }

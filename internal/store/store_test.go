@@ -458,3 +458,35 @@ func TestTxFilters(t *testing.T) {
 		t.Errorf("combined = %d, want 1", len(tx))
 	}
 }
+
+func TestAllTransactions(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+	link, _ := st.CreateLink(ctx, uid, "sandbox", "Mock ASPSP", "FI")
+	ids, _ := st.UpsertAccounts(ctx, uid, link.ID, []AccountInput{{UID: "u1", IdentificationHash: "h1"}})
+	g := func(c int64) *int64 { return &c }
+	cats, _ := st.ListCategories(ctx, uid)
+	_, _, err := st.InsertTransactions(ctx, uid, ids["u1"], []TransactionInput{
+		{EntryReference: "e1", BookingDate: "2026-08-02", AmountMinor: -100, Currency: "EUR", CreditDebit: "DBIT", Counterparty: "Bakery", MerchantNormalized: "bakery", CategoryID: g(cats[1].ID), CategorySource: CatSourceRule},
+		{EntryReference: "e2", BookingDate: "2026-08-01", AmountMinor: 500, Currency: "EUR", CreditDebit: "CRDT", Counterparty: "ACME", MerchantNormalized: "acme", CategoryID: nil},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := st.AllTransactions(ctx, uid, TxFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 || all[0].EntryReference != "e1" {
+		t.Errorf("export order wrong: %+v", all)
+	}
+	// Filtered export honors category/query like the page does.
+	filtered, err := st.AllTransactions(ctx, uid, TxFilter{Query: "acme"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filtered) != 1 || filtered[0].EntryReference != "e2" {
+		t.Errorf("filtered export wrong: %+v", filtered)
+	}
+}
