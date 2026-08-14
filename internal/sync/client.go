@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -52,11 +53,29 @@ var sessionErrorCodes = map[string]bool{
 // IsSessionError reports whether err means the bank link's session is no
 // longer usable and the user must re-authorize.
 func IsSessionError(err error) bool {
-	ae, ok := err.(*APIError)
-	if !ok {
+	var ae *APIError
+	if !errors.As(err, &ae) {
 		return false
 	}
 	return sessionErrorCodes[ae.Code]
+}
+
+// Error codes meaning "try again later" — the consent is fine, the bank or
+// aggregator is throttled/timing out. These must not fire failure
+// notifications nor damage the link state.
+var retryableErrorCodes = map[string]bool{
+	"ASPSP_RATE_LIMIT_EXCEEDED": true,
+	"ASPSP_TIMEOUT":             true,
+}
+
+// IsRetryableError reports whether err is a transient throttle/timeout the
+// next scheduled sync will likely survive.
+func IsRetryableError(err error) bool {
+	var ae *APIError
+	if !errors.As(err, &ae) {
+		return false
+	}
+	return retryableErrorCodes[ae.Code]
 }
 
 // Credentials is the identity a Client signs requests with. Configurable

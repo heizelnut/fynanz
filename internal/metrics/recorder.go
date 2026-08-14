@@ -14,6 +14,10 @@ func (Recorder) RunFailed(bank string) {
 	SyncRuns.With(prometheus.Labels{"bank": bank, "result": "error"}).Inc()
 }
 
+func (Recorder) RunRetryable(bank string) {
+	SyncRuns.With(prometheus.Labels{"bank": bank, "result": "retryable"}).Inc()
+}
+
 func (Recorder) ReauthNeeded(bank string) {
 	SyncRuns.With(prometheus.Labels{"bank": bank, "result": "reauth_needed"}).Inc()
 }

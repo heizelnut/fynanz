@@ -33,7 +33,8 @@ type fakeEB struct {
 	txnsAfter   []Transaction // served instead of paging after the first fetch
 	aspsps      []ASPSPData   // served for GET /aspsps
 	lastAuthReq StartAuthorizationRequest
-	expectKID   string // jwt kid the fake accepts (default test-app)
+	expectKID   string    // jwt kid the fake accepts (default test-app)
+	detailsErr  *APIError // when set, /accounts/{uid}/details fails with it
 }
 
 // setSessionErr toggles the session failure for GET /sessions/{id}
@@ -120,6 +121,11 @@ func (f *fakeEB) handler() http.Handler {
 				Access: Access{ValidUntil: "2025-08-01T00:00:00Z"},
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/accounts/"+f.sessionResp.Accounts[0].UID+"/details":
+			if f.detailsErr != nil {
+				w.WriteHeader(f.detailsErr.HTTPStatus)
+				_ = json.NewEncoder(w).Encode(ErrorResponse{Message: f.detailsErr.Message, Code: f.detailsErr.HTTPStatus, Error: f.detailsErr.Code, Detail: f.detailsErr.Detail})
+				return
+			}
 			writeJSON(w, f.details)
 		case r.Method == http.MethodGet && r.URL.Path == "/accounts/"+f.sessionResp.Accounts[0].UID+"/balances":
 			writeJSON(w, f.balances)

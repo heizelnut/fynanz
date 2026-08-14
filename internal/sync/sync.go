@@ -272,7 +272,8 @@ func (s *Service) SyncLink(ctx context.Context, linkID int64) (res Result, err e
 	defer func() {
 		now := time.Now().UTC().Format(time.RFC3339)
 		if err != nil {
-			if res.MarkedReauthNeeded || IsSessionError(err) {
+			switch {
+			case res.MarkedReauthNeeded || IsSessionError(err):
 				s.rec.ReauthNeeded(res.Link.Bank)
 				if res.Link.Bank == "" {
 					return
@@ -285,7 +286,12 @@ func (s *Service) SyncLink(ctx context.Context, linkID int64) (res Result, err e
 					Timestamp: now,
 					Link:      s.baseURL + "/links/" + strconv.FormatInt(linkID, 10) + "/reconnect",
 				})
-			} else {
+			case IsRetryableError(err):
+				// Bank/aggregator throttle or timeout: the consent is fine.
+				// Count it (result="retryable" in /metrics) but stay quiet —
+				// the next scheduled sync retries.
+				s.rec.RunRetryable(res.Link.Bank)
+			default:
 				s.rec.RunFailed(res.Link.Bank)
 				if res.Link.Bank == "" {
 					return

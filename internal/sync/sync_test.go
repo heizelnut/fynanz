@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"net/http"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -468,5 +469,40 @@ func TestSyncAllSkipsNonActiveLinks(t *testing.T) {
 	// Only pending → SyncAll must not crash and not return errors.
 	if errs := svc.SyncAll(ctx); len(errs) != 0 {
 		t.Errorf("SyncAll errored on pending links: %v", errs)
+	}
+}
+
+// TestRateLimitIsSilent: a 429 ASPSP_RATE_LIMIT_EXCEEDED during sync must not
+// fire notifications, must not expire the link, and the next sync retries.
+func TestRateLimitIsSilent(t *testing.T) {
+	f := fixtureEB()
+	f.detailsErr = &APIError{HTTPStatus: http.StatusTooManyRequests, Message: "slow down", Code: "ASPSP_RATE_LIMIT_EXCEEDED", Detail: "rate"}
+	n := &fakeNotifier{}
+	svc, st := newTestServiceN(t, f, n)
+	ctx := context.Background()
+	link, _, err := svc.StartLink(ctx, "sandbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// CompleteLink runs the first sync — which hits the 429 on account details.
+	err = svc.CompleteLink(ctx, link.State, "code-123")
+	if err == nil {
+		t.Fatal("expected the 429 to propagate")
+	}
+	if IsRetryableError(err) && !IsSessionError(err) {
+		// exactly the case: retryable, but no session damage
+	} else {
+		t.Errorf("err not classified as retryable: %v", err)
+	}
+	got, _ := st.GetLink(ctx, link.ID, link.UserID)
+	if got.Status != store.LinkActive {
+		t.Errorf("link status = %q, want %q (rate limits must not expire links)", got.Status, store.LinkActive)
+	}
+	if events := n.events(); len(events) != 0 {
+		t.Errorf("rate-limited sync sent %d notifications, want 0: %+v", len(events), events)
+	}
+	// Link auth state is intact: the sync itself merely failed transiently.
+	if got.SessionID == "" {
+		t.Error("session lost during 429")
 	}
 }
