@@ -1,0 +1,47 @@
+// The Uncategorized inbox: resolve one-handed (AGENTS.md §10). Each row is an
+// HTMX form; answering tags the tx AND grows the rules table (§5).
+{{define "content"}}
+<section class="panel">
+  <h2>Needs a category
+    {{if .UncategorizedN}}<span class="muted">({{.UncategorizedN}} open)</span>{{end}}
+  </h2>
+  {{if .Uncategorized}}
+  {{with index .Uncategorized 0}}<p class="muted">Pick the category — this also teaches the rule for “{{.MerchantNormalized}}” and similar.</p>{{end}}
+  <table>
+    <thead>
+      <tr><th>Date</th><th>Merchant</th><th>Details</th><th class="num">Amount</th><th>Category</th></tr>
+    </thead>
+    <tbody>
+      {{range .Uncategorized}}
+      <tr id="tx-{{.ID}}">
+        <td class="muted">{{.BookingDate}}</td>
+        <td class="strong">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
+        <td class="muted">{{.RemittanceInformation}}</td>
+        <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}">{{fmtAmount .AmountMinor .Currency}}</td>
+        <td>
+          <form class="inline-form" hx-post="/inbox/{{.ID}}" hx-target="#tx-{{.ID}}" hx-swap="outerHTML">
+            <select name="category_id">
+              <option value="" disabled selected>Choose…</option>
+              {{range $.Categories}}<option value="{{.ID}}">{{.Name}}</option>{{end}}
+            </select>
+            <button>Save</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="ok-text">Nothing to do — every transaction has a category. 🎉</p>
+  {{end}}
+</section>
+{{end}}
+
+// HTMX response after resolving one row: replaces the row and updates the nav
+// badge out-of-band.
+{{define "inbox_done_row"}}
+<tr id="tx-{{.TxID}}">
+  <td colspan="5"><span class="ok-text">✓ categorized{{if .CategoryName}} as <strong>{{.CategoryName}}</strong>{{end}}{{if .Pattern}} — rule “{{.Pattern}}” saved{{end}}</span></td>
+</tr>
+<span id="uncat-badge" hx-swap-oob="true">{{.UncategorizedN}}</span>
+{{end}}

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"fynanz/internal/sync"
 	"fynanz/web"
@@ -23,7 +24,13 @@ func mustStatic() fs.FS {
 	return fsys
 }
 
-// loadTemplates parses all server-rendered templates from the embedded FS.
+// pageFiles are the full-page templates. Each page is parsed as its own set
+// (base + partials + page) so every page's {{define "content"}} is
+// unambiguous — parsing all pages in one set would make the last definition
+// win for every request.
+var pageFiles = []string{"index.html", "transactions.html", "inbox.html", "categories.html"}
+
+// loadTemplates parses one template set per page from the embedded FS.
 func (h *handlers) loadTemplates() error {
 	fsys, err := web.Templates()
 	if err != nil {
@@ -33,19 +40,47 @@ func (h *handlers) loadTemplates() error {
 		"fmtAmount":   fmtAmount,
 		"accountName": h.accountName,
 	}
-	tmpl, err := template.New("").Funcs(funcs).ParseFS(fsys, "*.html")
-	if err != nil {
-		return err
+	h.pages = make(map[string]*template.Template, len(pageFiles))
+	for _, page := range pageFiles {
+		tmpl, err := template.New("").Funcs(funcs).ParseFS(fsys, "base.html", "partials.html", page)
+		if err != nil {
+			return err
+		}
+		h.pages[page] = tmpl
 	}
-	h.tmpl = tmpl
 	return nil
 }
 
-func (h *handlers) render(w http.ResponseWriter, d pageData) {
+// render executes the full page: base layout + that page's content block.
+func (h *handlers) render(w http.ResponseWriter, page string, d any) {
+	h.renderPage(w, "base.html", page, d)
+}
+
+// renderPartial executes a named partial from a page's set (HTMX responses).
+func (h *handlers) renderPartial(w http.ResponseWriter, page, partial string, d any) {
+	h.renderPage(w, partial, page, d)
+}
+
+func (h *handlers) renderPage(w http.ResponseWriter, name, page string, d any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := h.tmpl.ExecuteTemplate(w, "base.html", d); err != nil {
+	tmpl := h.pages[page]
+	if tmpl == nil {
+		http.Error(w, "unknown page: "+page, http.StatusInternalServerError)
+		return
+	}
+	if err := tmpl.ExecuteTemplate(w, name, d); err != nil {
 		http.Error(w, "template error: "+err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// categoryName resolves a category id to its name (template func + handlers).
+func (h *handlers) categoryName(id int64) string {
+	for _, c := range h.catCache {
+		if c.ID == id {
+			return c.Name
+		}
+	}
+	return fmt.Sprintf("#%d", id)
 }
 
 // accountName resolves a stored account id to a display name (template func).
@@ -83,4 +118,9 @@ func httpError(w http.ResponseWriter, err error) {
 
 func httpRedirErr(w http.ResponseWriter, r *http.Request, err error) {
 	http.Redirect(w, r, "/?err="+urlEncode(err.Error()), http.StatusSeeOther)
+}
+
+func strID(v string) int64 {
+	n, _ := strconv.ParseInt(v, 10, 64)
+	return n
 }

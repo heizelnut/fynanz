@@ -185,6 +185,109 @@ func TestExpiredSessionMarksLinkReauth(t *testing.T) {
 	}
 }
 
+// TestRuleAndTransferClassification: a sync auto-categorizes by existing rule
+// and flags internal transfers; resolving the inbox grows the rules so the
+// NEXT sync categorizes new entries automatically.
+func TestRuleAndTransferClassification(t *testing.T) {
+	f := fixtureEB()
+	f.details = Account{
+		AccountID: AccountIdentification{Iban: "FI1234567890"}, Name: "Mock Personal",
+		Product: "Mock", Currency: "EUR",
+	}
+	f.txnsPage1 = TransactionsResponse{Transactions: []Transaction{
+		{EntryReference: "t-rule", TransactionAmount: Amount{Currency: "EUR", Amount: "23.40"},
+			CreditDebitIndicator: "DBIT", Status: "BOOK", BookingDate: "2025-02-01",
+			Creditor: &PartyIdentification{Name: "S Market"}},
+		{EntryReference: "t-xfer", TransactionAmount: Amount{Currency: "EUR", Amount: "150.00"},
+			CreditDebitIndicator: "DBIT", Status: "BOOK", BookingDate: "2025-02-02",
+			Creditor: &PartyIdentification{Name: "Mock Personal"}},
+		{EntryReference: "t-unknown", TransactionAmount: Amount{Currency: "EUR", Amount: "9.99"},
+			CreditDebitIndicator: "DBIT", Status: "BOOK", BookingDate: "2025-02-03",
+			Creditor: &PartyIdentification{Name: "Mystery Store"}},
+	}}
+	svc, st := newTestService(t, f)
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+
+	// Pre-seed a rule (as if learned from a previous resolve).
+	cats, _ := st.ListCategories(ctx, uid)
+	groceries := cats[1].ID // Groceries
+	if err := st.InsertRule(ctx, uid, groceries, "s market", "exact"); err != nil {
+		t.Fatal(err)
+	}
+
+	link, _, err := svc.StartLink(ctx, "sandbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CompleteLink(ctx, link.State, "code-123"); err != nil {
+		t.Fatal(err)
+	}
+
+	txs, _ := st.RecentTransactions(ctx, uid, 0, 10)
+	byRef := map[string]store.Transaction{}
+	for _, t := range txs {
+		byRef[t.EntryReference] = t
+	}
+
+	ruleTx := byRef["t-rule"]
+	if ruleTx.CategoryID == nil || *ruleTx.CategoryID != groceries || ruleTx.CategorySource != store.CatSourceRule {
+		t.Errorf("rule tx not classified: %+v", ruleTx)
+	}
+	if ruleTx.MerchantNormalized != "s market" {
+		t.Errorf("merchant_normalized = %q", ruleTx.MerchantNormalized)
+	}
+
+	xfer := byRef["t-xfer"]
+	if !xfer.InternalTransfer {
+		t.Error("own-account transaction not flagged as internal transfer")
+	}
+	if xfer.CategoryID == nil { // Transfers (internal) category exists in seeds
+		t.Error("transfer not categorized")
+	}
+
+	unknown := byRef["t-unknown"]
+	if unknown.CategoryID != nil {
+		t.Errorf("unknown tx prematurely categorized: %+v", unknown)
+	}
+
+	// Resolve the unknown one through the inbox flow.
+	pattern, err := svc.ResolveInbox(ctx, unknown.ID, groceries)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pattern != "mystery store" {
+		t.Errorf("resolve pattern = %q", pattern)
+	}
+
+	// Next sync delivers a new transaction from the same merchant → the rule
+	// (grown from the answer) categorizes it automatically.
+	f.txnsAfter = []Transaction{
+		{EntryReference: "t-mystery2", TransactionAmount: Amount{Currency: "EUR", Amount: "3.50"},
+			CreditDebitIndicator: "DBIT", Status: "BOOK", BookingDate: "2025-02-04",
+			Creditor: &PartyIdentification{Name: "Mystery Store"}},
+	}
+	res, err := svc.SyncLink(ctx, link.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.TransactionsInserted != 1 {
+		t.Errorf("second sync inserted %d, want 1", res.TransactionsInserted)
+	}
+	txs, _ = st.RecentTransactions(ctx, uid, 0, 10)
+	for _, tx := range txs {
+		if tx.EntryReference == "t-mystery2" {
+			if tx.CategoryID == nil || *tx.CategoryID != groceries {
+				t.Errorf("rule-grown tx not categorized: %+v", tx)
+			}
+			break
+		}
+	}
+	if n, _ := st.UncategorizedCount(ctx, uid); n != 0 {
+		t.Errorf("uncategorized after resolution = %d, want 0", n)
+	}
+}
+
 func TestSyncAllSkipsNonActiveLinks(t *testing.T) {
 	svc, _ := newTestService(t, fixtureEB())
 	ctx := context.Background()

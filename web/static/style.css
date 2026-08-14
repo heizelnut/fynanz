@@ -69,7 +69,21 @@ select, input, button {
 }
 button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
 button:hover { filter: brightness(1.08); }
+button.danger { background: transparent; color: var(--err); border-color: var(--err); }
 .actions a { color: var(--accent); text-decoration: none; margin-left: .4rem; font-size: .85rem; }
+.badge-count {
+  display: inline-block;
+  min-width: 1.15em;
+  padding: .05em .35em;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: .72rem;
+  text-align: center;
+}
+.uncat { color: var(--err); font-size: .8rem; }
+.ok-text { color: var(--ok); }
+.panel.attention { border-color: #f0c36d; background: #fffaf0; }
 
 /* Wider viewports show more, never stretch emptier (AGENTS.md §10). */
 @media (max-width: 720px) {

@@ -63,6 +63,24 @@
   {{end}}
 </section>
 
+{{if .Uncategorized}}
+<section class="panel attention">
+  <h2>Needs categorization <a class="more" href="/inbox">{{.UncategorizedN}} open →</a></h2>
+  <table>
+    <tbody>
+      {{range .Uncategorized}}
+      <tr>
+        <td class="muted">{{.BookingDate}}</td>
+        <td class="strong">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
+        <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}">{{fmtAmount .AmountMinor .Currency}}</td>
+        <td><a href="/inbox">Categorize →</a></td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</section>
+{{end}}
+
 <section class="panel">
   <h2>Recent transactions <a class="more" href="/transactions">all →</a></h2>
   {{template "tx_table" .}}

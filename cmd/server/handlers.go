@@ -17,8 +17,9 @@ type handlers struct {
 	store    *store.Store
 	svc      *sync.Service
 	rec      metrics.Recorder
-	tmpl     *template.Template
-	accCache []store.Account // account id -> name for templates, refreshed per page
+	pages    map[string]*template.Template // one set per page (template.go)
+	accCache []store.Account               // account id -> display name, refreshed per page
+	catCache []store.Category              // category id -> name, refreshed per page
 }
 
 func newServer(st *store.Store, svc *sync.Service) http.Handler {
@@ -29,6 +30,13 @@ func newServer(st *store.Store, svc *sync.Service) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/", h.index)
 	r.Get("/transactions", h.transactions)
+	r.Get("/inbox", h.inbox)
+	r.Post("/inbox/{txID}", h.inboxResolve)
+	r.Post("/transactions/{txID}/category", h.txOverride)
+	r.Get("/categories", h.categories)
+	r.Post("/categories", h.categoriesCreate)
+	r.Post("/categories/{catID}/rename", h.categoriesRename)
+	r.Post("/categories/{catID}/merge", h.categoriesMerge)
 	r.Post("/links", h.createLink)
 	r.Get("/links/callback", h.linkCallback)
 	r.Get("/links/sync", h.syncAll)
@@ -43,13 +51,31 @@ func newServer(st *store.Store, svc *sync.Service) http.Handler {
 }
 
 type pageData struct {
-	Title    string
-	Message  string
-	Error    string
-	Links    []store.BankLink
-	Accounts []store.Account
-	Txs      []store.Transaction
-	TxCount  int64
+	Title          string
+	Message        string
+	Error          string
+	Links          []store.BankLink
+	Accounts       []store.Account
+	Txs            []store.Transaction
+	TxCount        int64
+	Categories     []store.Category
+	Uncategorized  []store.Transaction
+	UncategorizedN int64
+}
+
+type inboxPageData struct {
+	pageData
+	ResolvedCategory string
+}
+
+type categoryPageData struct {
+	pageData
+	CatTxCounts []catCount
+}
+
+type catCount struct {
+	ID    int64
+	Count int64
 }
 
 var defaultUserID int64 = 1 // single implicit v1 user (AGENTS.md §6)
@@ -60,7 +86,7 @@ func (h *handlers) index(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	h.render(w, data)
+	h.render(w, "index.html", data)
 }
 
 func (h *handlers) transactions(w http.ResponseWriter, r *http.Request) {
@@ -69,7 +95,7 @@ func (h *handlers) transactions(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	h.render(w, data)
+	h.render(w, "transactions.html", data)
 }
 
 func (h *handlers) page(r *http.Request, title string) (pageData, error) {
@@ -103,7 +129,88 @@ func (h *handlers) page(r *http.Request, title string) (pageData, error) {
 		return d, err
 	}
 	d.TxCount = count
+
+	cats, err := h.store.ListCategories(ctx, defaultUserID)
+	if err != nil {
+		return d, err
+	}
+	d.Categories = cats
+	h.catCache = cats
+
+	uncat, err := h.store.UncategorizedCount(ctx, defaultUserID)
+	if err != nil {
+		return d, err
+	}
+	d.UncategorizedN = uncat
+
+	// Dashboard surfacing: first few items needing a category (§5).
+	first, err := h.store.ListUncategorized(ctx, defaultUserID, 5)
+	if err != nil {
+		return d, err
+	}
+	d.Uncategorized = first
 	return d, nil
+}
+
+// inbox renders the real-time resolve view (AGENTS.md §4/§10).
+func (h *handlers) inbox(w http.ResponseWriter, r *http.Request) {
+	data, err := h.page(r, "Categorize")
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	items, err := h.store.ListUncategorized(r.Context(), defaultUserID, 100)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	d := inboxPageData{pageData: data, ResolvedCategory: r.URL.Query().Get("done")}
+	d.Uncategorized = items
+	h.render(w, "inbox.html", d)
+}
+
+// inboxResolve is the HTMX action: categorize + grow a rule. Responds with
+// the row replaced and the nav badge updated out-of-band.
+func (h *handlers) inboxResolve(w http.ResponseWriter, r *http.Request) {
+	txID := strID(chi.URLParam(r, "txID"))
+	catID, err := strconv.ParseInt(r.FormValue("category_id"), 10, 64)
+	if err != nil || txID == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	pattern, err := h.svc.ResolveInbox(r.Context(), txID, catID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	// Render only the row (hx-target) + badge (hx-swap-oob).
+	if len(h.catCache) == 0 {
+		if cats, err := h.store.ListCategories(r.Context(), defaultUserID); err == nil {
+			h.catCache = cats
+		}
+	}
+	left, _ := h.store.UncategorizedCount(r.Context(), defaultUserID)
+	h.renderPartial(w, "inbox.html", "inbox_done_row", map[string]any{
+		"TxID": txID, "CategoryName": h.categoryName(catID), "Pattern": pattern, "UncategorizedN": left,
+	})
+}
+
+// txOverride is the manual category override from the transactions list
+// (no rule is written; §4 "override at any time").
+func (h *handlers) txOverride(w http.ResponseWriter, r *http.Request) {
+	txID := strID(chi.URLParam(r, "txID"))
+	catID, err := strconv.ParseInt(r.FormValue("category_id"), 10, 64)
+	if err != nil || txID == 0 {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.OverrideCategory(r.Context(), txID, catID); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	h.renderPartial(w, "transactions.html", "tx_category_cell", map[string]any{
+		"TxID": txID, "CategoryName": h.categoryName(catID), "Categories": h.catCache,
+	})
 }
 
 // createLink starts a consent flow for the chosen bank and bounces the user
@@ -176,6 +283,67 @@ func (h *handlers) syncOne(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, "/?msg=synced+"+strconv.FormatInt(res.TransactionsInserted, 10)+"+new+transactions",
 		http.StatusSeeOther)
+}
+
+// categories renders category management (add/rename/merge, AGENTS.md §4).
+func (h *handlers) categories(w http.ResponseWriter, r *http.Request) {
+	data, err := h.page(r, "Categories")
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	counts := make(map[int64]int64)
+	rows, err := h.store.DB().QueryContext(r.Context(),
+		`SELECT category_id, COUNT(*) FROM transactions WHERE user_id = ? AND category_id IS NOT NULL GROUP BY category_id`,
+		defaultUserID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id, n int64
+		if err := rows.Scan(&id, &n); err == nil {
+			counts[id] = n
+		}
+	}
+	_ = rows.Err()
+	var cc []catCount
+	for _, c := range data.Categories {
+		cc = append(cc, catCount{ID: c.ID, Count: counts[c.ID]})
+	}
+	h.render(w, "categories.html", categoryPageData{pageData: data, CatTxCounts: cc})
+}
+
+func (h *handlers) categoriesCreate(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.store.CreateCategory(r.Context(), defaultUserID, r.FormValue("name")); err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/categories?msg=category+added", http.StatusSeeOther)
+}
+
+func (h *handlers) categoriesRename(w http.ResponseWriter, r *http.Request) {
+	id := strID(chi.URLParam(r, "catID"))
+	if err := h.store.RenameCategory(r.Context(), defaultUserID, id, r.FormValue("name")); err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/categories?msg=renamed", http.StatusSeeOther)
+}
+
+func (h *handlers) categoriesMerge(w http.ResponseWriter, r *http.Request) {
+	id := strID(chi.URLParam(r, "catID"))
+	into, err := strconv.ParseInt(r.FormValue("into"), 10, 64)
+	if err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	if err := h.store.MergeCategory(r.Context(), defaultUserID, id, into); err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/categories?msg=merged", http.StatusSeeOther)
 }
 
 // reconnectLink restarts the consent flow for a link (row reused, see

@@ -50,6 +50,11 @@ func main() {
 	svc := sync.NewService(st, client, metrics.Recorder{}, cfg.EBRedirectURL, cfg.PSUType,
 		cfg.HistoryDays, cfg.MaxConsentDays)
 
+	// Backfill categorization for rows synced before rules existed (§5).
+	if err := svc.Reclassify(ctx); err != nil {
+		log.Printf("reclassify: %v", err)
+	}
+
 	srv := newServer(st, svc)
 	go runScheduler(ctx, svc, cfg.SyncInterval)
 

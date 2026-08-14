@@ -55,6 +55,13 @@ type Account struct {
 	UpdatedAt string
 }
 
+// Category assignment sources (category_source column).
+const (
+	CatSourceRule     = "rule"
+	CatSourceManual   = "manual"
+	CatSourceTransfer = "transfer"
+)
+
 // TransactionInput is the extracted, normalized transaction payload.
 type TransactionInput struct {
 	EntryReference        string
@@ -71,15 +78,20 @@ type TransactionInput struct {
 	Note                  string
 	BalanceAfterMinor     *int64
 	Raw                   string
+	MerchantNormalized    string
+	CategoryID            *int64
+	CategorySource        string
+	InternalTransfer      bool
 }
 
 // Transaction is a stored transaction row.
 type Transaction struct {
 	TransactionInput
-	ID        int64
-	UserID    int64
-	AccountID int64
-	CreatedAt string
+	ID           int64
+	UserID       int64
+	AccountID    int64
+	CreatedAt    string
+	CategoryName string // joined for display; empty unless populated
 }
 
 // Category is a user-scoped category row.

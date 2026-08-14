@@ -35,10 +35,18 @@ var (
 		Name:      "accounts",
 		Help:      "Currently linked accounts per bank link.",
 	}, []string{"bank"})
+
+	// Uncategorized is the current number of transactions awaiting a category.
+	Uncategorized = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "fynanz",
+		Subsystem: "categorize",
+		Name:      "uncategorized",
+		Help:      "Transactions currently waiting for the user to categorize.",
+	})
 )
 
 func init() {
-	prometheus.MustRegister(SyncRuns, TransactionsIngested, AccountsSynced)
+	prometheus.MustRegister(SyncRuns, TransactionsIngested, AccountsSynced, Uncategorized)
 }
 
 func Handler() http.Handler { return promhttp.Handler() }

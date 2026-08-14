@@ -1,0 +1,44 @@
+// Category management: add/rename/merge — stored in the DB, no code change
+// (AGENTS.md §5). Plain forms; the fancy HTMX lives on the inbox.
+{{define "content"}}
+<section class="panel">
+  <h2>Categories</h2>
+  <form class="inline-form" method="post" action="/categories">
+    <label for="name">New category</label>
+    <input type="text" id="name" name="name" placeholder="e.g. Pets" required>
+    <button>Add</button>
+  </form>
+
+  {{if .Categories}}
+  <table>
+    <thead>
+      <tr><th>Name</th><th class="num">Transactions</th><th>Rename</th><th>Merge into…</th></tr>
+    </thead>
+    <tbody>
+      {{range .CatTxCounts}}
+      <tr>
+        <td class="strong">{{.Name}}</td>
+        <td class="num muted">{{.Count}}</td>
+        <td>
+          <form class="inline-form" method="post" action="/categories/{{.ID}}/rename">
+            <input type="text" name="name" value="{{.Name}}" required style="width:12em">
+            <button>Rename</button>
+          </form>
+        </td>
+        <td>
+          <form class="inline-form" method="post" action="/categories/{{.ID}}/merge">
+            <select name="into">
+              {{range $.Categories}}{{if ne .ID $.ID}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
+            </select>
+            <button class="danger" onclick="return confirm('Merge all transactions + rules into the target and delete this category?')">Merge</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No categories yet.</p>
+  {{end}}
+</section>
+{{end}}

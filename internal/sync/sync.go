@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
+	"fynanz/internal/categorize"
 	"fynanz/internal/metrics"
 	"fynanz/internal/store"
 )
@@ -217,6 +219,22 @@ func (s *Service) SyncLink(ctx context.Context, linkID int64) (res Result, err e
 
 	dateFrom := time.Now().UTC().AddDate(0, 0, -s.historyDays).Format("2006-01-02")
 
+	// Categorization context (AGENTS.md §5): rules + own accounts for
+	// transfer detection, loaded once per run.
+	rules, err := s.store.ListRules(ctx, userID)
+	if err != nil {
+		return res, err
+	}
+	ownAccounts, err := s.store.ListAccounts(ctx, userID)
+	if err != nil {
+		return res, err
+	}
+	own := make([]categorize.OwnAccount, 0, len(ownAccounts))
+	for _, a := range ownAccounts {
+		own = append(own, categorize.OwnAccount{Name: a.Name, Iban: a.Iban})
+	}
+	transferCatID := s.transferCategoryID(ctx, userID)
+
 	for _, sa := range ses.AccountsData {
 		details, err := s.client.GetAccountDetails(ctx, sa.UID)
 		if err != nil {
@@ -265,6 +283,7 @@ func (s *Service) SyncLink(ctx context.Context, linkID int64) (res Result, err e
 			if err != nil {
 				return res, fmt.Errorf("sync: convert transaction: %w", err)
 			}
+			s.categorizeInput(&inp, toCatRules(rules), own, transferCatID)
 			inputs = append(inputs, inp)
 		}
 		inserted, skipped, err := s.store.InsertTransactions(ctx, userID, accountID, inputs)
@@ -278,7 +297,161 @@ func (s *Service) SyncLink(ctx context.Context, linkID int64) (res Result, err e
 	if err := s.store.TouchLinkSync(ctx, link.ID); err != nil {
 		return res, err
 	}
+	// Reclassify so transfers are caught even on the first sync, when the
+	// account list was still empty at classification time. Idempotent:
+	// scans only uncategorized rows and rewrites what it finds.
+	_ = s.Reclassify(ctx)
 	return res, nil
+}
+
+// toCatRules converts stored rules to the pure categorize package's shape.
+func toCatRules(rules []store.Rule) []categorize.Rule {
+	out := make([]categorize.Rule, 0, len(rules))
+	for _, r := range rules {
+		out = append(out, categorize.Rule{ID: r.ID, CategoryID: r.CategoryID, Pattern: r.Pattern, MatchType: r.MatchType})
+	}
+	return out
+}
+
+// categorizeInput assigns merchant_normalized, internal-transfer flag and a
+// rule-based category to a transaction before it is stored.
+func (s *Service) categorizeInput(inp *store.TransactionInput, rules []categorize.Rule, own []categorize.OwnAccount, transferCatID *int64) {
+	src := strings.TrimSpace(inp.Counterparty)
+	if src == "" && inp.RemittanceInformation != "" {
+		// Some banks (e.g. sandbox mock income rows) omit debtor/creditor and
+		// put the name into the remittance info.
+		src = strings.SplitN(inp.RemittanceInformation, " | ", 2)[0]
+	}
+	inp.MerchantNormalized = categorize.NormalizeMerchant(src)
+
+	if categorize.IsInternalTransfer(inp.Counterparty, inp.CounterpartyAccount, own) {
+		inp.InternalTransfer = true
+		if transferCatID != nil {
+			id := *transferCatID
+			inp.CategoryID = &id
+			inp.CategorySource = store.CatSourceTransfer
+		}
+		return
+	}
+	if id, ok := categorize.Classify(rules, inp.MerchantNormalized); ok {
+		inp.CategoryID = &id
+		inp.CategorySource = store.CatSourceRule
+	}
+}
+
+// transferCategoryID resolves the 'Transfers (internal)' category (may be
+// renamed by the user), nil if absent.
+func (s *Service) transferCategoryID(ctx context.Context, userID int64) *int64 {
+	cats, err := s.store.ListCategories(ctx, userID)
+	if err != nil {
+		return nil
+	}
+	for _, c := range cats {
+		if strings.EqualFold(strings.TrimSpace(c.Name), "transfers (internal)") {
+			id := c.ID
+			return &id
+		}
+	}
+	return nil
+}
+
+// Reclassify re-derives merchant + category for every uncategorized row (run
+// at startup so rules added later also apply to older transactions).
+func (s *Service) Reclassify(ctx context.Context) error {
+	userID, err := s.store.EnsureDefaultUser(ctx)
+	if err != nil {
+		return err
+	}
+	rules, err := s.store.ListRules(ctx, userID)
+	if err != nil {
+		return err
+	}
+	ownAccounts, err := s.store.ListAccounts(ctx, userID)
+	if err != nil {
+		return err
+	}
+	own := make([]categorize.OwnAccount, 0, len(ownAccounts))
+	for _, a := range ownAccounts {
+		own = append(own, categorize.OwnAccount{Name: a.Name, Iban: a.Iban})
+	}
+	transferCatID := s.transferCategoryID(ctx, userID)
+
+	for {
+		txs, err := s.store.ListUncategorized(ctx, userID, batchSize)
+		if err != nil {
+			return err
+		}
+		if len(txs) == 0 {
+			break
+		}
+		updates := make([]store.CategoryUpdate, 0, len(txs))
+		for _, t := range txs {
+			inp := t.TransactionInput
+			s.categorizeInput(&inp, toCatRules(rules), own, transferCatID)
+			updates = append(updates, store.CategoryUpdate{
+				TxID:               t.ID,
+				MerchantNormalized: inp.MerchantNormalized,
+				CategoryID:         inp.CategoryID,
+				Source:             inp.CategorySource,
+				InternalTransfer:   inp.InternalTransfer,
+			})
+		}
+		if err := s.store.ApplyCategoryUpdates(ctx, userID, updates); err != nil {
+			return err
+		}
+		if len(txs) < batchSize {
+			break
+		}
+	}
+	s.updateUncategorizedGauge(ctx, userID)
+	return nil
+}
+
+const batchSize = 500
+
+// ResolveInbox categorizes one inbox item and grows the rules table from the
+// user's answer (AGENTS.md §5: exact merchant match at minimum). Returns the
+// rule pattern used (empty when there is nothing to match on).
+func (s *Service) ResolveInbox(ctx context.Context, txID, categoryID int64) (string, error) {
+	userID, err := s.store.EnsureDefaultUser(ctx)
+	if err != nil {
+		return "", err
+	}
+	tx, err := s.store.GetTransaction(ctx, userID, txID)
+	if err != nil {
+		return "", err
+	}
+	if err := s.store.SetTransactionCategory(ctx, userID, txID, &categoryID, store.CatSourceRule); err != nil {
+		return "", err
+	}
+	pattern := tx.MerchantNormalized
+	if pattern != "" {
+		if err := s.store.InsertRule(ctx, userID, categoryID, pattern, "exact"); err != nil {
+			return "", err
+		}
+	}
+	s.updateUncategorizedGauge(ctx, userID)
+	return pattern, nil
+}
+
+// OverrideCategory sets a category manually (no rule written) — used from the
+// transactions list for corrections at any time.
+func (s *Service) OverrideCategory(ctx context.Context, txID, categoryID int64) error {
+	userID, err := s.store.EnsureDefaultUser(ctx)
+	if err != nil {
+		return err
+	}
+	err = s.store.SetTransactionCategory(ctx, userID, txID, &categoryID, store.CatSourceManual)
+	if err == nil {
+		s.updateUncategorizedGauge(ctx, userID)
+	}
+	return err
+}
+
+func (s *Service) updateUncategorizedGauge(ctx context.Context, userID int64) {
+	if n, err := s.store.UncategorizedCount(ctx, userID); err == nil {
+		s.rec.SetUncategorized(n)
+	}
 }
 
 // SyncAll runs SyncLink for every active link. Errors are returned per link

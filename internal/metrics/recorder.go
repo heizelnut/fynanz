@@ -27,3 +27,7 @@ func (Recorder) Ingested(bank string, n int64) {
 func (Recorder) SetAccounts(bank string, n int) {
 	AccountsSynced.With(prometheus.Labels{"bank": bank}).Set(float64(n))
 }
+
+func (Recorder) SetUncategorized(n int64) {
+	Uncategorized.Set(float64(n))
+}

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}} · fynanz</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/vendor/htmx.min.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -12,6 +13,8 @@
     <nav>
       <a href="/">Dashboard</a>
       <a href="/transactions">Transactions</a>
+      <a href="/inbox">Inbox{{if .UncategorizedN}} <span class="badge-count" id="uncat-badge">{{.UncategorizedN}}</span>{{end}}</a>
+      <a href="/categories">Categories</a>
     </nav>
     <span class="count">{{.TxCount}} tx</span>
   </header>

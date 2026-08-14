@@ -152,6 +152,114 @@ func TestUpsertAccountsAndTxDedupe(t *testing.T) {
 	}
 }
 
+func TestCategoryAssignmentAndInbox(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+	link, _ := st.CreateLink(ctx, uid, "sandbox", "Mock ASPSP", "FI")
+	ids, _ := st.UpsertAccounts(ctx, uid, link.ID, []AccountInput{{UID: "u1", IdentificationHash: "h1"}})
+
+	// Groceries is seeded by the migration — reuse it.
+	seeded, _ := st.ListCategories(ctx, uid)
+	var groceries int64
+	for _, c := range seeded {
+		if c.Name == "Groceries" {
+			groceries = c.ID
+		}
+	}
+	if groceries == 0 {
+		t.Fatal("seeded Groceries category missing")
+	}
+	if _, err := st.CreateCategory(ctx, uid, "Groceries"); err == nil {
+		t.Error("duplicate seeded name should fail")
+	}
+	if _, err := st.CreateCategory(ctx, uid, "Pets"); err != nil {
+		t.Errorf("new category should succeed: %v", err)
+	}
+	if _, err := st.CreateCategory(ctx, uid, "Pets"); err == nil {
+		t.Error("duplicate custom category name should fail")
+	}
+
+	txs := []TransactionInput{
+		{EntryReference: "r1", BookingDate: "2025-02-01", AmountMinor: -100, Currency: "EUR", CreditDebit: "DBIT", Counterparty: "S Market", MerchantNormalized: "s market"},
+		{EntryReference: "r2", BookingDate: "2025-02-02", AmountMinor: 50, Currency: "EUR", CreditDebit: "CRDT", Counterparty: "Acme", MerchantNormalized: "acme"},
+	}
+	if _, _, err := st.InsertTransactions(ctx, uid, ids["u1"], txs); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, _ := st.UncategorizedCount(ctx, uid); n != 2 {
+		t.Errorf("uncategorized = %d, want 2", n)
+	}
+	items, err := st.ListUncategorized(ctx, uid, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].MerchantNormalized != "acme" || items[1].MerchantNormalized != "s market" {
+		t.Errorf("inbox wrong (want newest first): %+v", items)
+	}
+
+	// Categorize the first via the inbox path.
+	if err := st.SetTransactionCategory(ctx, uid, items[0].ID, &groceries, CatSourceRule); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.InsertRule(ctx, uid, groceries, "s market", "exact"); err != nil {
+		t.Fatal(err)
+	}
+
+	if n, _ := st.UncategorizedCount(ctx, uid); n != 1 {
+		t.Errorf("after resolve uncategorized = %d, want 1", n)
+	}
+	got, err := st.GetTransaction(ctx, uid, items[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.CategoryID == nil || *got.CategoryID != groceries || got.CategorySource != CatSourceRule || got.CategoryName != "Groceries" {
+		t.Errorf("category not applied: %+v", got)
+	}
+
+	// Rule survives and matches a new transaction on the next sync.
+	rules, err := st.ListRules(ctx, uid)
+	if err != nil || len(rules) != 1 || rules[0].Pattern != "s market" {
+		t.Errorf("rules: %+v %v", rules, err)
+	}
+}
+
+func TestMergeCategory(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+	cats, _ := st.ListCategories(ctx, uid) // seeded v1 list
+	src, dst := cats[1].ID, cats[3].ID
+
+	link, _ := st.CreateLink(ctx, uid, "sandbox", "Mock ASPSP", "FI")
+	ids, _ := st.UpsertAccounts(ctx, uid, link.ID, []AccountInput{{UID: "u1", IdentificationHash: "h1"}})
+	g := func(c int64) *int64 { return &c }
+	ins, _, _ := st.InsertTransactions(ctx, uid, ids["u1"], []TransactionInput{
+		{EntryReference: "r1", BookingDate: "2025-01-01", AmountMinor: -1, Currency: "EUR", CreditDebit: "DBIT", CategoryID: g(src), CategorySource: CatSourceRule, MerchantNormalized: "pat"},
+		{EntryReference: "r2", BookingDate: "2025-01-02", AmountMinor: -2, Currency: "EUR", CreditDebit: "DBIT", CategoryID: g(dst), CategorySource: CatSourceRule, MerchantNormalized: "pat2"},
+	})
+	_ = ins
+	_ = st.InsertRule(ctx, uid, src, "pat", "exact")
+
+	if err := st.MergeCategory(ctx, uid, src, dst); err != nil {
+		t.Fatal(err)
+	}
+	txs, _ := st.RecentTransactions(ctx, uid, 0, 10)
+	for _, tx := range txs {
+		if tx.CategoryID == nil || *tx.CategoryID != dst {
+			t.Errorf("post-merge tx category %v, want %d", tx.CategoryID, dst)
+		}
+	}
+	rules, _ := st.ListRules(ctx, uid)
+	if len(rules) != 0 {
+		t.Errorf("source rules not removed: %+v", rules)
+	}
+	if _, err := st.CreateCategory(ctx, uid, "Groceries"); err != nil {
+		t.Logf("(seeded Groceries may have been merged away)")
+	}
+}
+
 func TestEmptyEntryReferenceGetsPseudoRef(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()

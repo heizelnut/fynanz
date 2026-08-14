@@ -27,7 +27,9 @@ type fakeEB struct {
 	statusCode  int // override for error-path tests
 	errBody     string
 	mu          sync.Mutex
-	sessionErr  *APIError // when set, GET /sessions/{id} fails with it
+	sessionErr  *APIError     // when set, GET /sessions/{id} fails with it
+	txnCalls    int           // transaction fetches so far
+	txnsAfter   []Transaction // served instead of paging after the first fetch
 }
 
 // setSessionErr toggles the session failure for GET /sessions/{id}
@@ -103,9 +105,16 @@ func (f *fakeEB) handler() http.Handler {
 		case r.Method == http.MethodGet && r.URL.Path == "/accounts/"+f.sessionResp.Accounts[0].UID+"/balances":
 			writeJSON(w, f.balances)
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/accounts/"+f.sessionResp.Accounts[0].UID+"/transactions"):
-			if r.URL.Query().Get("continuation_key") == "" {
+			f.mu.Lock()
+			f.txnCalls++
+			first, after := f.txnCalls == 1, f.txnsAfter
+			f.mu.Unlock()
+			switch {
+			case !first && after != nil:
+				writeJSON(w, TransactionsResponse{Transactions: after})
+			case r.URL.Query().Get("continuation_key") == "":
 				writeJSON(w, f.txnsPage1)
-			} else {
+			default:
 				writeJSON(w, f.txnsPage2)
 			}
 		default:
