@@ -107,15 +107,13 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
 
   table, thead, tbody, tr, td { display: block; }
   thead { display: none; }
-  /* Rows keep the same light separator as desktop (border-bottom on each
-     cell); the last cell of a row drops it so consecutive rows don't
-     double up into a 2px line. */
+  /* One separator between stacked rows — the same 1px --line as desktop
+     row borders — not under every field inside a row. */
+  tr + tr { border-top: 1px solid var(--line); }
   td {
-    border-bottom: 1px solid var(--line);
     padding: .45rem 0;
     white-space: normal;
   }
-  td:last-child { border-bottom: none; }
   td::before {
     content: attr(data-label);
     display: inline-block;
