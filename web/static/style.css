@@ -98,10 +98,9 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
 .uncat { color: var(--err); font-size: .8rem; }
 
 /* Copyable identifier/text fields: monospace + click-to-copy affordance
-   (logic in app.js). Slightly smaller face for mono density. */
+   (logic in app.js). */
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  font-size: .92em;
 }
 .copyable { cursor: copy; }
 .copyable:hover { text-decoration: underline dotted; }
@@ -153,6 +152,12 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
     /* Same size as the cell text: a smaller label + vertical-align: top was
        sitting above the value's glyphs instead of on its baseline. */
     font-size: inherit;
+    /* Labels always look like labels, even inside .mono/.copyable cells
+       whose styling (face, cursor, hover underline) would otherwise leak
+       into the pseudo-element via inheritance. */
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    cursor: default;
+    text-decoration: none;
     text-transform: uppercase;
     letter-spacing: .03em;
     color: var(--muted);
