@@ -38,6 +38,7 @@ func (h *handlers) loadTemplates() error {
 	}
 	funcs := template.FuncMap{
 		"fmtAmount":   fmtAmount,
+		"fmtDate":     fmtDate,
 		"accountName": h.accountName,
 	}
 	h.pages = make(map[string]*template.Template, len(pageFiles))
@@ -108,6 +109,15 @@ func fmtAmount(minor any, currency string) string {
 		return ""
 	}
 	return sync.FormatMinor(v, currency) + " " + currency
+}
+
+// fmtDate shortens an RFC3339 timestamp ("2026-09-13T11:48:42Z") to its date
+// part for dense tables; empty input stays empty.
+func fmtDate(s string) string {
+	if len(s) >= 10 && (s[4] == '-' && s[7] == '-') {
+		return s[:10]
+	}
+	return s
 }
 
 func urlEncode(s string) string { return url.QueryEscape(s) }

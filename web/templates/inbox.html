@@ -15,8 +15,8 @@
       {{range .Uncategorized}}
       <tr id="tx-{{.ID}}">
         <td class="muted">{{.BookingDate}}</td>
-        <td class="strong">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
-        <td class="muted">{{.RemittanceInformation}}</td>
+        <td class="strong wrap">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
+        <td class="muted wrap">{{.RemittanceInformation}}</td>
         <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}">{{fmtAmount .AmountMinor .Currency}}</td>
         <td>
           <form class="inline-form" hx-post="/inbox/{{.ID}}" hx-target="#tx-{{.ID}}" hx-swap="outerHTML">

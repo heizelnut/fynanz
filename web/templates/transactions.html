@@ -18,8 +18,8 @@
       <tr>
         <td class="muted">{{.BookingDate}}</td>
         <td class="muted">{{accountName .AccountID}}</td>
-        <td class="strong">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
-        <td class="muted">{{.RemittanceInformation}}</td>
+        <td class="strong wrap">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
+        <td class="muted wrap">{{.RemittanceInformation}}</td>
         <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}">{{fmtAmount .AmountMinor .Currency}}</td>
         <td id="catcell-{{.ID}}">
           {{if .CategoryName}}

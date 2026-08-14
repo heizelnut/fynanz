@@ -33,13 +33,17 @@ body {
 .flash { padding: .5rem .8rem; margin: .6rem 1rem 0; border-radius: 6px; font-size: .9rem; }
 .flash.ok { background: #e6f4ea; color: var(--ok); }
 .flash.err { background: #fdecea; color: var(--err); }
-main { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+/* Full-width layout (AGENTS.md §10): a wider viewport shows more, not the
+   same content capped mid-screen. Panels scroll their tables horizontally
+   instead of letting long cells push past the container. */
+main { padding: 1rem; }
 .panel {
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: .8rem 1rem;
   margin-bottom: 1rem;
+  overflow-x: auto;
 }
 .panel h2 { margin: .2rem 0 .7rem; font-size: 1.05rem; display: flex; justify-content: space-between; }
 .more { font-size: .8rem; font-weight: 400; color: var(--accent); text-decoration: none; }
@@ -48,6 +52,16 @@ th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(-
 th { color: var(--muted); font-weight: 600; font-size: .8rem; text-transform: uppercase; letter-spacing: .03em; }
 td:first-child, th:first-child { padding-left: 0; }
 td:last-child, th:last-child { padding-right: 0; }
+
+/* Long-text cells: wrap and clamp instead of blowing the row out.
+   Applied to free-text columns (error/detail/merchant), not short ones. */
+td.wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 8em;
+  max-width: 24em;
+}
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .pos { color: var(--ok); }
 .neg { color: var(--err); }
@@ -85,10 +99,8 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
 .ok-text { color: var(--ok); }
 .panel.attention { border-color: #f0c36d; background: #fffaf0; }
 
-/* Wider viewports show more, never stretch emptier (AGENTS.md §10). */
 @media (max-width: 720px) {
   .panel { padding: .5rem .6rem; }
   .topbar { gap: .8rem; }
   table { font-size: .85rem; }
-  .table-scroll { overflow-x: auto; }
 }
