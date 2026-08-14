@@ -107,17 +107,15 @@ button.danger { background: transparent; color: var(--err); border-color: var(--
 
   table, thead, tbody, tr, td { display: block; }
   thead { display: none; }
-  tr {
-    margin: 0 0 .7rem;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: .3rem .55rem;
-  }
+  /* Rows keep the same light separator as desktop (border-bottom on each
+     cell); the last cell of a row drops it so consecutive rows don't
+     double up into a 2px line. */
   td {
-    border-bottom: none;
-    padding: .28rem 0;
+    border-bottom: 1px solid var(--line);
+    padding: .45rem 0;
     white-space: normal;
   }
+  td:last-child { border-bottom: none; }
   td::before {
     content: attr(data-label);
     display: inline-block;
