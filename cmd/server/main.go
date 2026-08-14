@@ -19,7 +19,7 @@ import (
 	"fynanz/internal/sync"
 )
 
-const sandboxDefaultURL = sync.SandboxBaseURL
+const sandboxDefaultURL = sync.ApiBaseURL
 
 func main() {
 	_ = godotenv.Load() // .env is optional; real env is the source of truth

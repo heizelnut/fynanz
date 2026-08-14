@@ -15,12 +15,10 @@ import (
 	"time"
 )
 
-// DefaultClient returns a client for the shared sandbox. Production apps use
-// https://api.enablebanking.com (see .env.example).
-const (
-	SandboxBaseURL = "https://tilisy-sandbox.enablebanking.com"
-	ProdBaseURL    = "https://api.enablebanking.com"
-)
+// Sandbox and production share this single API host; which environment your
+// requests run in is decided by the JWT's kid (the app's registration), not
+// by the URL. Verify an app with `make creds`.
+const ApiBaseURL = "https://api.enablebanking.com"
 
 // APIError is a non-2xx Enable Banking response. Field tags follow the spec
 // envelope: code is the int HTTP code, error is the text code (e.g.
