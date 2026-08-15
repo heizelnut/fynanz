@@ -68,7 +68,8 @@ body {
   /* Above in-content floats (e.g. the chart hover label, z-index 5). */
   z-index: 10;
 }
-.brand { font-weight: 700; color: var(--fg); text-decoration: none; font-size: 1.1rem; }
+.brand { font-weight: 700; color: var(--fg); text-decoration: none; font-size: 1.1rem; display: inline-flex; align-items: center; gap: .35rem; }
+.brand-ico { height: 1.15em; width: 1.15em; }
 .topbar nav a { color: var(--muted); text-decoration: none; margin-right: .9rem; }
 .topbar nav a:hover { color: var(--accent); }
 /* Active page: dashed underline under the label. Decoration goes on the
