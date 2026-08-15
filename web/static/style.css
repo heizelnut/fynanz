@@ -88,9 +88,29 @@ body {
 .count { margin-left: auto; color: var(--muted); font-size: .85rem; }
 .footer { padding: 0 1rem 1rem; font-size: .8rem; text-align: center; }
 .footer a { color: var(--muted); }
-.flash { padding: .5rem .8rem; margin: .6rem 1rem 0; border-radius: 6px; font-size: .9rem; }
+.flash {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .8rem;
+  margin: .6rem 1rem 0;
+  border-radius: 6px;
+  font-size: .9rem;
+}
 .flash.ok { background: var(--flash-ok-bg); color: var(--ok); }
 .flash.err { background: var(--flash-err-bg); color: var(--err); }
+.flash-close {
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: .5;
+  flex: 0 0 auto;
+}
+.flash-close:hover { opacity: 1; }
 /* Full-width layout (AGENTS.md §10): a wider viewport shows more, not the
    same content capped mid-screen. Panels scroll their tables horizontally
    instead of letting long cells push past the container. */

@@ -23,8 +23,8 @@
     <span class="count">{{.TxCount}} tx</span>
   </header>
 
-  {{if .Message}}<div class="flash ok">{{.Message}}</div>{{end}}
-  {{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+  {{if .Message}}<div class="flash ok" role="status">{{.Message}}<button class="flash-close" aria-label="Dismiss">×</button></div>{{end}}
+  {{if .Error}}<div class="flash err" role="alert">{{.Error}}<button class="flash-close" aria-label="Dismiss">×</button></div>{{end}}
 
   <main>
     {{template "content" .}}

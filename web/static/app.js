@@ -197,3 +197,62 @@
   });
   svg.addEventListener("mouseleave", hide);
 })();
+
+// Flash alerts (server-rendered from ?msg=/?err=): dismiss on × click or
+// automatically after a few seconds — removed immediately, no animation.
+// Delegated so any flash swapped in later by HTMX behaves identically.
+// If the user INTERACTS with the alert (press before selecting text for
+// copy-paste, keyboard focus), the auto-dismiss is cancelled — removal
+// while selecting would kill the selection. The × button still dismisses.
+(function () {
+  "use strict";
+  var AUTO_MS = 6000;
+
+  function dismiss(flash) {
+    if (!flash || flash.dataset.dismissing) return;
+    flash.dataset.dismissing = "1";
+    flash.remove();
+  }
+
+  function cancelAuto(flash) {
+    if (flash._autoTimer) {
+      clearTimeout(flash._autoTimer);
+      flash._autoTimer = null;
+    }
+  }
+
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest(".flash-close");
+    if (btn) dismiss(btn.parentElement);
+  });
+
+  function arm(flash) {
+    if (flash.dataset.armed) return;
+    flash.dataset.armed = "1";
+    flash._autoTimer = setTimeout(function () { dismiss(flash); }, AUTO_MS);
+    // Any interaction cancels the auto timer (mouse/touch press starts
+    // selection; focus is keyboard interaction).
+    flash.addEventListener("pointerdown", function () { cancelAuto(flash); });
+    flash.addEventListener("touchstart", function () { cancelAuto(flash); });
+    flash.addEventListener("focusin", function () { cancelAuto(flash); });
+  }
+
+  document.querySelectorAll(".flash").forEach(arm);
+
+  // Flashes that arrive after load (HTMX partial swaps) get armed on insert.
+  if (window.MutationObserver) {
+    var mo = new MutationObserver(function (muts) {
+      for (var m = 0; m < muts.length; m++) {
+        var added = muts[m].addedNodes;
+        for (var i = 0; i < added.length; i++) {
+          var n = added[i];
+          if (n.nodeType !== 1) continue;
+          if (n.classList && n.classList.contains("flash")) arm(n);
+          var inner = n.querySelectorAll ? n.querySelectorAll(".flash") : [];
+          for (var j = 0; j < inner.length; j++) arm(inner[j]);
+        }
+      }
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+  }
+})();
