@@ -1,7 +1,6 @@
 package main
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -47,16 +46,33 @@ func TestDeriveBalanceSeries(t *testing.T) {
 	}
 }
 
-func TestSvgPointsScales(t *testing.T) {
-	pts := []balancePoint{{Date: "a", Minor: 0}, {Date: "b", Minor: 100}}
-	s := svgPoints(pts, 0, 100, 1200, 200)
-	if !strings.HasPrefix(s, "10.0,") || !strings.HasSuffix(s, "1190.0,10.0") {
-		t.Errorf("scaled points wrong: %q", s)
+func TestSvgCoordScales(t *testing.T) {
+	// 2 points spanning min..max: first at bottom-left, last at top-right.
+	first := svgCoord(0, 2, 0, 0, 100)
+	if first.X != 10 || first.Y != 190 {
+		t.Errorf("first = %+v, want x=10 y=190", first)
 	}
-	// Flat series lands mid-height and doesn't divide by zero.
-	flat := svgPoints([]balancePoint{{Minor: 5}, {Minor: 5}}, 5, 5, 1200, 200)
-	if !strings.Contains(flat, "100.0") {
-		t.Errorf("flat series should sit mid-height: %q", flat)
+	last := svgCoord(1, 2, 100, 0, 100)
+	if last.X != 1190 || last.Y != 10 {
+		t.Errorf("last = %+v, want x=1190 y=10", last)
+	}
+	// Flat series (max == min) lands mid-height without dividing by zero.
+	if y := svgCoord(4, 9, 5, 5, 5).Y; y != 100 {
+		t.Errorf("flat y = %v, want 100", y)
+	}
+	// Single point centers horizontally at the pad.
+	if x := svgCoord(0, 1, 50, 0, 100).X; x != 10 {
+		t.Errorf("single point x = %v, want 10", x)
+	}
+}
+
+func TestPolylineAttr(t *testing.T) {
+	got := polylineAttr([]svgPoint{{1, 2}, {3.25, 4.5}, {5, 6}})
+	if got != "1.0,2.0 3.2,4.5 5.0,6.0" {
+		t.Errorf("polylineAttr = %q", got)
+	}
+	if s := polylineAttr(nil); s != "" {
+		t.Errorf("empty should be empty, got %q", s)
 	}
 }
 

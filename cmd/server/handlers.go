@@ -301,9 +301,13 @@ func (h *handlers) dashboard(ctx context.Context) (dashboardData, error) {
 		series := make([]lineSeries, 0, len(raw))
 		js := balChartJSON{Currency: cur, Min: min, Max: maxV, Series: make([]balSeriesJSON, 0, len(raw))}
 		for i, rs := range raw {
+			coords := make([]svgPoint, len(rs.pts))
+			for j, p := range rs.pts {
+				coords[j] = svgCoord(j, len(rs.pts), p.Minor, min, maxV)
+			}
 			series = append(series, lineSeries{
 				Label:  rs.label,
-				Points: svgPoints(rs.pts, min, maxV, 1200, 200),
+				Points: polylineAttr(coords),
 				Class:  fmt.Sprintf("bal-%d", i),
 			})
 			pts := make([]balPointJSON, 0, len(rs.pts))

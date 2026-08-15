@@ -50,11 +50,17 @@ func deriveBalanceSeries(current int64, days []store.DailyAmount, maxPoints int)
 	return out
 }
 
-// lineSeries is one scaled polyline for the balance SVG.
+// svgPoint is one vertex in chart viewBox space (scaled).
+type svgPoint struct{ X, Y float64 }
+
+// lineSeries is one balance series for the SVG: a single polyline spanning
+// every snapshot in the fixed 1200x200 viewBox (the line interpolates
+// straight between points; there is no gap-breaking or dot-marker logic —
+// the chart stays a simple line).
 type lineSeries struct {
 	Label  string
-	Points string
-	Class  string // bal-0, bal-1… (stroke colors in CSS)
+	Points string // "x,y x,y …" polyline points attr (every point)
+	Class  string // bal-0, bal-1… (stroke color in CSS)
 }
 
 // balChartJSON is what the crosshair cursor consumes (server-emitted, so the
@@ -89,21 +95,30 @@ func buildBalanceChart(series []lineSeries, min, max int64, ticks []string) bala
 	return balanceChart{Min: min, Max: max, Series: series, Ticks: ticks}
 }
 
-// svgPoints converts balance points to a "x,y x,y …" polyline string using
-// the global min/max, in a viewBox of width×height with 10px margins.
-func svgPoints(pts []balancePoint, minVal, maxVal int64, w, h int) string {
-	const pad = 10.0
+const (
+	balW, balH = 1200.0, 200.0 // viewBox of the balance svg
+	balPad     = 10.0
+)
+
+// svgCoord scales one point of a series into viewBox space: x spread by
+// index (shared across series so they're comparable at the same column), y
+// by the global min/max with 10px margins.
+func svgCoord(i, n int, minor, minVal, maxVal int64) svgPoint {
+	x := balPad + float64(i)*((balW-2*balPad)/float64(max(1, n-1)))
+	var y float64
+	if maxVal > minVal {
+		y = balPad + (float64(maxVal)-float64(minor))*((balH-2*balPad)/float64(maxVal-minVal))
+	} else {
+		y = balH / 2 // flat series
+	}
+	return svgPoint{x, y}
+}
+
+// polylineAttr joins scaled coordinates into a polyline points attribute.
+func polylineAttr(coords []svgPoint) string {
 	var b strings.Builder
-	n := len(pts)
-	for i, p := range pts {
-		x := pad + float64(i)*((float64(w)-2*pad)/float64(max(1, n-1)))
-		y := 0.0
-		if maxVal > minVal {
-			y = pad + (float64(maxVal)-float64(p.Minor))*((float64(h)-2*pad)/float64(maxVal-minVal))
-		} else {
-			y = float64(h) / 2 // flat series
-		}
-		fmt.Fprintf(&b, "%.1f,%.1f ", x, y)
+	for _, c := range coords {
+		fmt.Fprintf(&b, "%.1f,%.1f ", c.X, c.Y)
 	}
 	return strings.TrimSpace(b.String())
 }

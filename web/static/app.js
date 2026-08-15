@@ -41,10 +41,13 @@
   });
 })();
 
-// Grafana-style crosshair for the balance chart: reads the series data the
-// server embedded next to the svg (balance-data), draws a dashed cursor line
-// + per-series dots at the nearest point, and shows a floating label with
-// date and each account's balance. DOM-safe (textContent, no HTML from data).
+// Crosshair for the balance chart. It sticks to EXISTING data points only:
+// the vertical line, horizontal line, dots and label always sit on a real
+// snapshot — nothing is interpolated client-side. The graph itself still
+// lerps between adjacent snapshots (polyline segments), except across time
+// gaps that are too large, where the server renders discrete dots instead
+// (see gapBreaks in cmd/server/charts.go). DOM-safe (textContent, no HTML
+// from data).
 (function () {
   "use strict";
   var NS = "http://www.w3.org/2000/svg";
@@ -65,6 +68,11 @@
     var out = s.slice(0, -scale) + "." + s.slice(-scale);
     return (neg ? "-" : "") + out + " " + data.currency;
   }
+  // Same mappings the server uses to place vertices (svgCoord in charts.go)
+  // in the fixed 1200x200 viewBox — no client-side geometry adaptation.
+  function xFor(i, n) {
+    return PAD + i * ((W - 2 * PAD) / Math.max(1, n - 1));
+  }
   function yFor(minor) {
     if (data.max > data.min) {
       return PAD + (data.max - minor) * ((H - 2 * PAD) / (data.max - data.min));
@@ -72,35 +80,47 @@
     return H / 2;
   }
 
-  // Crosshair group + one dot per series.
-  var g = document.createElementNS(NS, "g");
-  g.setAttribute("class", "crosshair");
-  var line = document.createElementNS(NS, "line");
-  g.appendChild(line);
+  // nearest returns the actual data point on series si closest to xb: the
+  // nearest vertex by index. No interpolation — values are always real.
+  function nearest(si, xb) {
+    var pts = data.series[si].points;
+    var n = pts.length;
+    if (n === 0) return null;
+    var i = Math.round(((xb - PAD) / (W - 2 * PAD)) * (n - 1));
+    i = Math.min(Math.max(0, i), n - 1);
+    var p = pts[i];
+    return { cx: xFor(i, n), cy: yFor(p.minor), minor: p.minor, date: p.date };
+  }
+
+  // Crosshair group: reuse the template's placeholder <g class="crosshair"
+  // hidden> — it starts hidden so nothing renders at (0,0) on load; the
+  // children (vertical line, horizontal line at the primary series' snapped
+  // point, one dot per series) appear only once the mouse enters the svg.
+  var g = svg.querySelector(".crosshair");
+  if (!g) return;
+  var vline = document.createElementNS(NS, "line");
+  g.appendChild(vline);
+  var hline = document.createElementNS(NS, "line");
+  g.appendChild(hline);
   var dots = data.series.map(function () {
     var c = document.createElementNS(NS, "circle");
     c.setAttribute("r", "3.5");
     g.appendChild(c);
     return c;
   });
-  svg.appendChild(g);
 
   var wrap = svg.parentElement;
   var label = wrap.querySelector(".cursor-label");
   if (!label) return;
 
-  function pick(si, ratio) {
-    var pts = data.series[si].points;
-    if (pts.length === 0) return null;
-    var i = Math.round(ratio * (pts.length - 1));
-    i = Math.min(Math.max(0, i), pts.length - 1);
-    return pts[i];
-  }
-
-  function buildLabel(date) {
-    function row(si) {
-      var p = pick(si, lastRatio);
-      if (!p) return null;
+  function buildLabel(entries, date) {
+    label.textContent = "";
+    var d = document.createElement("div");
+    d.className = "cl-date";
+    d.textContent = date;
+    label.appendChild(d);
+    entries.forEach(function (e, si) {
+      if (!e) return;
       var rowEl = document.createElement("div");
       rowEl.className = "cl-row";
       var sw = document.createElement("span");
@@ -110,38 +130,38 @@
       name.textContent = data.series[si].label;
       var amt = document.createElement("span");
       amt.className = "cl-amt";
-      amt.textContent = fmtAmt(p.minor);
+      amt.textContent = fmtAmt(e.minor);
       rowEl.appendChild(sw); rowEl.appendChild(name); rowEl.appendChild(amt);
-      return rowEl;
-    }
-    var d = document.createElement("div");
-    d.className = "cl-date";
-    d.textContent = date;
-    label.textContent = "";
-    label.appendChild(d);
-    data.series.forEach(function (_, si) {
-      var r = row(si);
-      if (r) label.appendChild(r);
+      label.appendChild(rowEl);
     });
   }
 
-  var lastRatio = 0;
   function show(xRatio, px, py) {
-    lastRatio = xRatio;
-    var xb = PAD + xRatio * (W - 2 * PAD);
-    line.setAttribute("x1", xb);
-    line.setAttribute("y1", PAD);
-    line.setAttribute("x2", xb);
-    line.setAttribute("y2", H - PAD);
-    var dates = [];
-    data.series.forEach(function (s, si) {
-      var p = pick(si, xRatio);
-      dots[si].setAttribute("cx", xb);
-      dots[si].setAttribute("cy", yFor(p.minor));
-      dots[si].setAttribute("data-minor", String(p.minor));
-      if (p && dates.indexOf(p.date) < 0) dates.push(p.date);
+    var xb = PAD + xRatio * (W - 2 * PAD); // viewBox x (same mapping as svgCoord)
+    var primary = nearest(0, xb);
+    if (!primary) { hide(); return; }
+    var cx = primary.cx; // snap the whole cursor to the primary data point
+    vline.setAttribute("x1", cx);
+    vline.setAttribute("y1", PAD);
+    vline.setAttribute("x2", cx);
+    vline.setAttribute("y2", H - PAD);
+
+    var entries = data.series.map(function (_, si) { return nearest(si, cx); });
+    entries.forEach(function (e, si) {
+      dots[si].setAttribute("cx", String(e ? e.cx : cx));
+      dots[si].setAttribute("cy", String(e ? e.cy : PAD));
+      dots[si].setAttribute("data-minor", String(e ? e.minor : 0));
     });
-    buildLabel(dates.length ? dates[dates.length - 1] : "");
+    hline.removeAttribute("hidden");
+    hline.setAttribute("x1", String(PAD));
+    hline.setAttribute("y1", String(primary.cy));
+    hline.setAttribute("x2", String(W - PAD));
+    hline.setAttribute("y2", String(primary.cy));
+    var date = "";
+    for (var i = entries.length - 1; i >= 0; i--) {
+      if (entries[i] && entries[i].date) { date = entries[i].date; break; }
+    }
+    buildLabel(entries, date);
     label.removeAttribute("hidden");
     // Keep the label inside the panel.
     var lw = label.offsetWidth || 160, lh = label.offsetHeight || 60;

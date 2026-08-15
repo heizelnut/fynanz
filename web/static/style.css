@@ -167,16 +167,42 @@ td.wrap {
   font-weight: 600;
 }
 
-/* Dashboard charts (milestone 7): pure-CSS bars + inline SVG line, no deps.
-   .dash-grid spreads across the viewport; panels stack on mobile. */
+/* Dashboard panels (milestone 7) — Grafana-style responsive column grid:
+   a fixed 12-track grid where every panel spans 1 / -1 by default ("one
+   row = one component"), and explicit span classes widen panels as the
+   viewport grows:
+     < 48em   : all panels stacked, one per row
+     48-79.9em: Spend + Income half-width, Balance next row (full width)
+     >= 80em  : Spend(3) Income(3) Balance(6) — all in one row
+   Spans are always expressed within the 12 explicit tracks, so a bare
+   `span N` can never create implicit columns (an earlier single-track grid
+   + `span 2` dragged the second panel side by side). Panels stretch to the
+   row height (Grafana-style); the income bars absorb extra height (its
+   y-scale is relative), while the balance chart always keeps its natural
+   fixed viewBox aspect — no viewBox/geometry adaptation anywhere. The
+   spend list has no absorber; its hbar rows are usually the tallest and
+   define the row height. */
 .dash-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  grid-template-columns: repeat(12, 1fr);
   gap: 1rem;
   margin-bottom: 1rem;
 }
-.dash-grid .panel { margin-bottom: 0; }
-.dash-grid .span2 { grid-column: 1 / -1; }
+.dash-grid > .panel {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dash-grid .vbars { flex: 1 1 auto; min-height: 11rem; }
+
+@media (min-width: 48em) {          /* 768px+ */
+  .dash-grid > .panel.g-half { grid-column: span 6; }
+}
+@media (min-width: 80em) {          /* 1280px+ */
+  .dash-grid > .panel.g-half { grid-column: span 3; }
+  .dash-grid > .panel.g-wide { grid-column: span 6; }
+}
 
 .hbars { display: flex; flex-direction: column; gap: .4rem; }
 .hbar { display: flex; align-items: baseline; gap: .6rem; font-size: .9rem; }
@@ -196,7 +222,7 @@ td.wrap {
 }
 .hbar-val { flex: 0 0 5.5em; text-align: right; }
 
-.vbars { display: flex; align-items: flex-end; gap: .6rem; height: 11rem; }
+.vbars { display: flex; gap: .6rem; height: 11rem; }
 .vbar-col {
   flex: 1;
   display: flex;
@@ -213,6 +239,7 @@ td.wrap {
   flex: 1;
   justify-content: center;
 }
+.vbar-in, .vbar-out { flex: 0 0 auto; }
 .vbar-in, .vbar-out { display: block; width: 38%; max-width: 26px; border-radius: 3px 3px 0 0; }
 .vbar-in { background: var(--ok); }
 .vbar-out { background: var(--err); }
@@ -221,6 +248,10 @@ td.wrap {
 .sw { display: inline-block; width: .8em; height: .8em; border-radius: 3px; }
 .sw.in { background: var(--ok); }
 .sw.out { background: var(--err); }
+
+/* The vbar bars use percentage heights against .vbar-bars' flexed height.
+   .vbars must stretch .vbar-col (no align-items:flex-end) or the track
+   collapses to content height and the bars render 0 tall (see git history). */
 
 /* Plot spans the full panel: no max-height (it letterboxed and centered the
    content), viewBox is 1200x200 so desktop panels stay proportioned. */
@@ -232,6 +263,10 @@ svg.balance {
   cursor: crosshair;
 }
 .crosshair { pointer-events: none; }
+/* The HTML `hidden` attribute is not mapped to display:none on SVG elements
+   by browsers' UA stylesheet — without this the crosshair's degenerate
+   (0,0) children render at the chart's top-left on page load. */
+.crosshair[hidden] { display: none; }
 .crosshair line {
   stroke: var(--fg);
   stroke-width: 1;
