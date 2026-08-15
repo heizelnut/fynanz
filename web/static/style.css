@@ -195,6 +195,7 @@ td.wrap {
   flex-direction: column;
 }
 .dash-grid .vbars { flex: 1 1 auto; min-height: 11rem; }
+.dash-grid .balance-wrap { flex: 1; min-height: 0; } /* basis 0: the wrap takes exactly the panel's leftover height (height:100% above is the non-flex fallback and is inert here) */
 
 @media (min-width: 48em) {          /* 768px+ */
   .dash-grid > .panel.g-half { grid-column: span 6; }
@@ -247,7 +248,16 @@ td.wrap {
 .vbar-in { background: var(--ok); }
 .vbar-out { background: var(--err); }
 .vbar-label { font-size: .78rem; color: var(--muted); }
-.legend { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .9rem; font-size: .8rem; }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .75rem; font-size: .8rem; }
+/* Legend groups: each .lg-item is one atomic unit of information (series
+   swatch+name, min/max range, derived-since note). Items never wrap mid-
+   phrase; spacing comes from the legend's column-gap — no dot separators. */
+.lg-item { display: inline-flex; align-items: center; gap: .35rem; white-space: nowrap; }
+/* Forces a legend line break: the balance legend rows its series on the
+   first line and the min/max/since stats on a second line, with the
+   derived-since note pinned to the line's right edge. */
+.lg-break { flex-basis: 100%; height: 0; }
+.lg-item.lg-right { margin-left: auto; }
 .sw { display: inline-block; width: .8em; height: .8em; border-radius: 3px; }
 .sw.in { background: var(--ok); }
 .sw.out { background: var(--err); }
@@ -258,25 +268,49 @@ td.wrap {
 
 /* Plot spans the full panel: no max-height (it letterboxed and centered the
    content), viewBox is 1200x200 so desktop panels stay proportioned. */
-.balance-wrap { position: relative; }
+/* The wrap fills whatever height the panel gives it (height:100% only
+   resolves when the panel is stretched — one-row layout — where the wrap
+   is also flex:1 of the panel column, so it never overflows header/legend;
+   in stacked/full-width rows the chain is content-sized and stays natural).
+   The svg then fills the wrap: with preserveAspectRatio="none" the chart
+   stretches to the box, and vector-effect keeps strokes 1px under that. */
+.balance-wrap { position: relative; height: 100%; }
 svg.balance {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   cursor: crosshair;
 }
-.crosshair { pointer-events: none; }
-/* The HTML `hidden` attribute is not mapped to display:none on SVG elements
-   by browsers' UA stylesheet — without this the crosshair's degenerate
-   (0,0) children render at the chart's top-left on page load. */
-.crosshair[hidden] { display: none; }
-.crosshair line {
+/* Cursor overlay: an independent <svg> filling the wrap WITHOUT a viewBox,
+   so its user units are CSS pixels. The chart svg is stretched by
+   height:100% + preserveAspectRatio="none", but the cursor lives outside
+   that transform — its stroke-dasharray dashes and marker dots stay at a
+   constant screen size no matter how the chart is stretched. */
+svg.cursor {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+/* Same quirk as before: the HTML `hidden` attribute is not mapped to
+   display:none on svg elements — make it explicit or the cursor's default
+   (0,0) geometry shows at the chart's top-left on load. */
+svg.cursor[hidden] { display: none; }
+svg.cursor line {
   stroke: var(--fg);
-  stroke-width: 1;
+  stroke-width: 2;
   stroke-dasharray: 4 4;
   opacity: .65;
 }
-.crosshair circle { fill: var(--fg); stroke: var(--surface); stroke-width: 2; }
+svg.cursor .cur-dots { fill: none; stroke: none; }
+/* Marker dot symbols (per series color, from the same CSS vars as the
+   lines in the chart svg); no border ring — just the filled dot. */
+.cdot.bal-0 { fill: var(--accent); }
+.cdot.bal-1 { fill: var(--ok); }
+.cdot.bal-2 { fill: var(--err); }
+.cdot.bal-3 { fill: #a97bff; }
 .cursor-label {
   position: absolute;
   top: 0;
@@ -296,7 +330,7 @@ svg.balance {
 .cursor-label .cl-row { display: flex; gap: .5rem; align-items: baseline; }
 .cursor-label .cl-sw { width: .7em; height: .7em; border-radius: 50%; display: inline-block; }
 .cursor-label .cl-amt { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-left: auto; }
-.bal { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.bal { fill: none; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
 .bal.bal-0 { stroke: var(--accent); }
 .bal.bal-1 { stroke: var(--ok); }
 .bal.bal-2 { stroke: var(--err); }

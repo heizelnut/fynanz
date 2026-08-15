@@ -94,17 +94,31 @@
     <script type="application/json" id="balance-data">{{jsJSON .Dashboard.BalanceJSON}}</script>
     <div class="balance-wrap">
       <svg class="balance" viewBox="0 0 1200 200" preserveAspectRatio="none" role="img" aria-label="balance trend">
-        <g class="crosshair" hidden></g>
         {{range .Dashboard.Balance.Series}}
-        <polyline class="bal {{.Class}}" points="{{.Points}}"></polyline>
+        <polyline class="bal {{.Class}}" points="{{.Points}}" vector-effect="non-scaling-stroke"></polyline>
         {{end}}
+      </svg>
+      <svg class="cursor" hidden aria-hidden="true">
+        <defs>
+          {{range .Dashboard.Balance.Series}}
+          <marker id="cd-{{.Class}}" viewBox="-5 -5 10 10" refX="0" refY="0" markerWidth="12" markerHeight="12">
+            <circle class="cdot {{.Class}}" cx="0" cy="0" r="4.5"></circle>
+          </marker>
+          {{end}}
+        </defs>
+        <line class="cur-v"></line>
+        <line class="cur-h"></line>
+        {{range .Dashboard.Balance.Series}}<polyline class="cur-dots" marker-end="url(#cd-{{.Class}})"></polyline>{{end}}
       </svg>
       <div class="cursor-label" hidden></div>
     </div>
     <div class="legend muted">
-      {{range .Dashboard.Balance.Series}}<span class="sw {{.Class}}"></span> {{.Label}}{{end}}
-      · min {{fmtAmount .Dashboard.Balance.Min .Dashboard.Currency}} / max {{fmtAmount .Dashboard.Balance.Max .Dashboard.Currency}}
-      · since {{.Dashboard.Since}}
+      {{range .Dashboard.Balance.Series}}
+      <span class="lg-item"><span class="sw {{.Class}}"></span> {{.Label}}</span>
+      {{end}}
+      <span class="lg-break"></span>
+      <span class="lg-item">{{fmtAmount .Dashboard.Balance.Min .Dashboard.Currency}} ↔ {{fmtAmount .Dashboard.Balance.Max .Dashboard.Currency}}</span>
+      <span class="lg-item lg-right">since {{.Dashboard.Since}}</span>
     </div>
     {{else}}
     <p class="muted">No balance history to show yet (accounts gain balances after a sync).</p>

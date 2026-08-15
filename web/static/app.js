@@ -42,24 +42,34 @@
 })();
 
 // Crosshair for the balance chart. It sticks to EXISTING data points only:
-// the vertical line, horizontal line, dots and label always sit on a real
-// snapshot — nothing is interpolated client-side. The graph itself still
-// lerps between adjacent snapshots (polyline segments), except across time
-// gaps that are too large, where the server renders discrete dots instead
-// (see gapBreaks in cmd/server/charts.go). DOM-safe (textContent, no HTML
-// from data).
+// the vertical/horizontal lines and per-series markers always sit on a real
+// snapshot — no interpolation. Geometry is computed in the chart's 1200x200
+// viewBox space (same mapping as the server), then converted to CSS pixels
+// and drawn in the OVERLAY svg.cursor, which has no viewBox of its own — so
+// its stroke-dasharray dashes and marker dots stay constant on screen even
+// though the chart svg is stretched by height:100% + preserveAspectRatio
+// "none". DOM-safe (textContent, no HTML from data).
 (function () {
   "use strict";
-  var NS = "http://www.w3.org/2000/svg";
   var PAD = 10, W = 1200, H = 200;
 
   var svg = document.querySelector("svg.balance");
+  var overlay = document.querySelector("svg.cursor");
   var dataEl = document.getElementById("balance-data");
-  if (!svg || !dataEl) return;
+  if (!svg || !overlay || !dataEl) return;
 
   var data;
   try { data = JSON.parse(dataEl.textContent); } catch (e) { return; }
   if (!data.series || data.series.length === 0) return;
+
+  var vline = overlay.querySelector(".cur-v");
+  var hline = overlay.querySelector(".cur-h");
+  var dots = [].slice.call(overlay.querySelectorAll(".cur-dots"));
+  if (!vline || !hline || dots.length !== data.series.length) return;
+
+  var wrap = svg.parentElement;
+  var label = wrap.querySelector(".cursor-label");
+  if (!label) return;
 
   var scale = 2; // minor units per whole unit (EUR etc.); fine for v1
   function fmtAmt(minor) {
@@ -82,6 +92,7 @@
 
   // nearest returns the actual data point on series si closest to xb: the
   // nearest vertex by index. No interpolation — values are always real.
+  // Returned coordinates are viewBox units (0..1200 x 0..200).
   function nearest(si, xb) {
     var pts = data.series[si].points;
     var n = pts.length;
@@ -92,26 +103,23 @@
     return { cx: xFor(i, n), cy: yFor(p.minor), minor: p.minor, date: p.date };
   }
 
-  // Crosshair group: reuse the template's placeholder <g class="crosshair"
-  // hidden> — it starts hidden so nothing renders at (0,0) on load; the
-  // children (vertical line, horizontal line at the primary series' snapped
-  // point, one dot per series) appear only once the mouse enters the svg.
-  var g = svg.querySelector(".crosshair");
-  if (!g) return;
-  var vline = document.createElementNS(NS, "line");
-  g.appendChild(vline);
-  var hline = document.createElementNS(NS, "line");
-  g.appendChild(hline);
-  var dots = data.series.map(function () {
-    var c = document.createElementNS(NS, "circle");
-    c.setAttribute("r", "3.5");
-    g.appendChild(c);
-    return c;
-  });
+  // v2p maps viewBox units to CSS pixels on the overlay: the overlay fills
+  // the same box as the (stretched) chart svg, so sx/sy are its rect/1200,
+  // rect/200. Kept fresh per event so resize never desyncs the cursor.
+  var sx = 1, sy = 1;
+  function frame() {
+    var r = svg.getBoundingClientRect();
+    sx = r.width / W; sy = r.height / H;
+  }
+  function px(v, axis) { return (axis === "x" ? v * sx : v * sy).toFixed(1); }
 
-  var wrap = svg.parentElement;
-  var label = wrap.querySelector(".cursor-label");
-  if (!label) return;
+  function placeDot(si, vx, vy) {
+    var ex = px(vx, "x"), ey = px(vy, "y");
+    // Invisible 24px anchor segment ending exactly at the point: marker-end
+    // renders the series' dot there in real px (Chromium skips markers on
+    // short segments; .cur-dots has no stroke/fill so it stays invisible).
+    dots[si].setAttribute("points", (parseFloat(ex) - 24).toFixed(2) + "," + ey + " " + ex + "," + ey);
+  }
 
   function buildLabel(entries, date) {
     label.textContent = "";
@@ -136,27 +144,31 @@
     });
   }
 
-  function show(xRatio, px, py) {
+  // Vertical/horizontal end coordinates in px: y ranges over the chart
+  // area (PAD..H-PAD in viewBox space) converted by sy; x over PAD..W-PAD.
+  var vx1 = 0, vx2 = 0, vy1 = 0, vy2 = 0;
+  var hx1 = 0, hx2 = 0, hy = 0;
+
+  function show(xRatio, pxPos, pyPos) {
     var xb = PAD + xRatio * (W - 2 * PAD); // viewBox x (same mapping as svgCoord)
     var primary = nearest(0, xb);
     if (!primary) { hide(); return; }
     var cx = primary.cx; // snap the whole cursor to the primary data point
-    vline.setAttribute("x1", cx);
-    vline.setAttribute("y1", PAD);
-    vline.setAttribute("x2", cx);
-    vline.setAttribute("y2", H - PAD);
+    frame();
+
+    vx1 = vx2 = px(cx, "x");
+    vy1 = px(PAD, "y"); vy2 = px(H - PAD, "y");
+    vline.setAttribute("x1", vx1); vline.setAttribute("y1", vy1);
+    vline.setAttribute("x2", vx2); vline.setAttribute("y2", vy2);
 
     var entries = data.series.map(function (_, si) { return nearest(si, cx); });
     entries.forEach(function (e, si) {
-      dots[si].setAttribute("cx", String(e ? e.cx : cx));
-      dots[si].setAttribute("cy", String(e ? e.cy : PAD));
-      dots[si].setAttribute("data-minor", String(e ? e.minor : 0));
+      placeDot(si, e ? e.cx : primary.cx, e ? e.cy : PAD);
     });
-    hline.removeAttribute("hidden");
-    hline.setAttribute("x1", String(PAD));
-    hline.setAttribute("y1", String(primary.cy));
-    hline.setAttribute("x2", String(W - PAD));
-    hline.setAttribute("y2", String(primary.cy));
+    hx1 = px(PAD, "x"); hx2 = px(W - PAD, "x"); hy = px(primary.cy, "y");
+    hline.setAttribute("x1", hx1); hline.setAttribute("y1", hy);
+    hline.setAttribute("x2", hx2); hline.setAttribute("y2", hy);
+
     var date = "";
     for (var i = entries.length - 1; i >= 0; i--) {
       if (entries[i] && entries[i].date) { date = entries[i].date; break; }
@@ -165,14 +177,14 @@
     label.removeAttribute("hidden");
     // Keep the label inside the panel.
     var lw = label.offsetWidth || 160, lh = label.offsetHeight || 60;
-    var lx = Math.min(px + 12, wrap.clientWidth - lw - 6);
-    var ly = Math.min(py + 14, wrap.clientHeight - lh - 6);
+    var lx = Math.min(pxPos + 12, wrap.clientWidth - lw - 6);
+    var ly = Math.min(pyPos + 14, wrap.clientHeight - lh - 6);
     label.style.left = Math.max(6, lx) + "px";
     label.style.top = Math.max(6, ly) + "px";
   }
 
   function hide() {
-    g.setAttribute("hidden", "");
+    overlay.setAttribute("hidden", "");
     label.setAttribute("hidden", "");
   }
 
@@ -180,7 +192,7 @@
     var rect = svg.getBoundingClientRect();
     var x = e.clientX - rect.left;
     if (x < 0 || x > rect.width) { hide(); return; }
-    g.removeAttribute("hidden");
+    overlay.removeAttribute("hidden");
     show(Math.min(1, Math.max(0, x / rect.width)), e.clientX - wrap.getBoundingClientRect().left, e.clientY - wrap.getBoundingClientRect().top);
   });
   svg.addEventListener("mouseleave", hide);
