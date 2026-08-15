@@ -169,6 +169,7 @@ type catSpendRow struct {
 	Name       string
 	TotalMinor int64
 	Pct        int
+	IsTransfer bool // internal transfers render grayed (not real spending)
 }
 
 // fillCatSpend computes bar widths against the top spending category.
@@ -182,7 +183,7 @@ func fillCatSpend(rows []store.CategorySpend) []catSpendRow {
 		return out
 	}
 	for _, r := range rows {
-		out = append(out, catSpendRow{Name: r.Name, TotalMinor: r.TotalMinor, Pct: int(r.TotalMinor * 100 / top)})
+		out = append(out, catSpendRow{Name: r.Name, TotalMinor: r.TotalMinor, Pct: int(r.TotalMinor * 100 / top), IsTransfer: r.IsTransfer})
 	}
 	return out
 }

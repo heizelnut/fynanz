@@ -81,6 +81,9 @@ func (c *FinanceCollector) Collect(ch chan<- prometheus.Metric) {
 		var totExp, totInc float64
 		if err1 == nil {
 			for _, e := range expenses {
+				if e.IsTransfer {
+					continue // money movement, not spending (help text: transfers excluded)
+				}
 				emit(ch, c.expensesDesc, float64(e.TotalMinor), e.Name, cc.Currency)
 				totExp += float64(e.TotalMinor)
 			}

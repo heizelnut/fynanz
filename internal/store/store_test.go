@@ -282,6 +282,10 @@ func TestDashboardAggregations(t *testing.T) {
 		{EntryReference: "a4", BookingDate: "2026-08-07", AmountMinor: 10000, Currency: "EUR", CreditDebit: "CRDT", CategoryID: g(cats[0].ID), CategorySource: CatSourceRule, MerchantNormalized: "m4"},
 		{EntryReference: "a5", BookingDate: "2026-07-20", AmountMinor: -200, Currency: "EUR", CreditDebit: "DBIT", CategoryID: nil, MerchantNormalized: "m5"},
 		{EntryReference: "a6", BookingDate: "2026-08-10", AmountMinor: -500, Currency: "EUR", CreditDebit: "DBIT", InternalTransfer: true, CategoryID: g(cats[10].ID), CategorySource: CatSourceTransfer, MerchantNormalized: "m6"},
+		// An internal transfer without the flag (bank rows often get the
+		// category from rules/manual resolution without the detector firing)
+		// must still be excluded from income/expense (the live-site leak).
+		{EntryReference: "a8", BookingDate: "2026-08-12", AmountMinor: -400, Currency: "EUR", CreditDebit: "DBIT", CategoryID: g(cats[10].ID), CategorySource: CatSourceManual, MerchantNormalized: "m8"},
 		// A USD row in the same account (multi-currency isolation).
 		{EntryReference: "a7", BookingDate: "2026-08-11", AmountMinor: -777, Currency: "USD", CreditDebit: "DBIT", CategoryID: g(groceries), CategorySource: CatSourceRule, MerchantNormalized: "m7"},
 	}
@@ -289,19 +293,22 @@ func TestDashboardAggregations(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Spend by category: August, EUR only — transfer excluded, income
-	// excluded, uncategorized from July excluded by date, USD excluded.
+	// Spend by category: August, EUR only — transfer appears but IsTransfer
+	// (grayed, not counted), income excluded, July uncategorized by date,
+	// USD excluded.
 	spend, err := st.SpendByCategory(ctx, uid, "EUR", "2026-08-01")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(spend) != 2 || spend[0].Name != "Groceries" || spend[0].TotalMinor != 1300 || spend[1].TotalMinor != 250 {
+	if len(spend) != 3 || spend[0].Name != "Groceries" || spend[0].TotalMinor != 1300 ||
+		spend[1].Name != "Transfers (internal)" || spend[1].TotalMinor != 900 || !spend[1].IsTransfer ||
+		spend[2].TotalMinor != 250 || spend[2].IsTransfer {
 		t.Errorf("spend by category wrong: %+v", spend)
 	}
 
 	// Editor: if everything is in July (uncategorized), it still shows up.
 	spendJul, _ := st.SpendByCategory(ctx, uid, "EUR", "2026-07-01")
-	if len(spendJul) != 3 || !spendJul[2].IsUncategorized {
+	if len(spendJul) != 4 || !spendJul[3].IsUncategorized {
 		t.Errorf("july spend (incl. uncategorized) wrong: %+v", spendJul)
 	}
 
@@ -318,9 +325,9 @@ func TestDashboardAggregations(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Every movement counts here (balance is balance): 6 distinct booking
+	// Every movement counts here (balance is balance): 7 distinct booking
 	// days on account u1 in August — transfers included, USD rows too.
-	if len(days) != 6 || days[0].Date != "2026-08-01" {
+	if len(days) != 7 || days[0].Date != "2026-08-01" {
 		t.Errorf("daily sums wrong: %+v", days)
 	}
 

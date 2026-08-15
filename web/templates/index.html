@@ -54,7 +54,7 @@
     {{if .Dashboard.CatSpend}}
     <div class="hbars">
       {{range .Dashboard.CatSpend}}
-      <div class="hbar">
+      <div class="hbar{{if .IsTransfer}} transfer{{end}}">
         <span class="hbar-label wrap">{{.Name}}</span>
         <span class="hbar-track"><span class="hbar-fill" style="width:{{.Pct}}%"></span></span>
         <span class="hbar-val num mono">{{fmtAmount .TotalMinor $.Dashboard.Currency}}</span>

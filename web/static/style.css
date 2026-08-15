@@ -221,6 +221,9 @@ td.wrap {
   border-radius: 999px;
 }
 .hbar-val { flex: 0 0 5.5em; text-align: right; }
+/* Internal transfers are money movement between own accounts, not spending:
+   the row stays visible but grayed (dashboard.go marks it IsTransfer). */
+.hbar.transfer { opacity: .5; filter: grayscale(.9); }
 
 .vbars { display: flex; gap: .6rem; height: 11rem; }
 .vbar-col {
