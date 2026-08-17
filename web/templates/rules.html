@@ -1,0 +1,96 @@
+// Rule editor: every (field, pattern) → category rule, add/edit/delete and a
+// live match preview for tuning fuzzy rules (AGENTS.md §5 — rule UI landed
+// in v1). Plain forms on purpose; the fancy HTMX stays on the inbox.
+{{define "content"}}
+<section class="panel">
+  <h2>Rules <span class="muted">how transactions are auto-categorized</span></h2>
+  <p class="muted">
+    Rules match a merchant or a description with
+    <b>exact</b> (identical text), <b>contains</b> (substring) or
+    <b>fuzzy</b> (every meaningful word present, order-insensitive, one-typo
+    tolerant) semantics. Person-to-person transfers are never matched by
+    rules — they always land in the inbox.
+  </p>
+
+  <form class="inline-form" method="post" action="/rules">
+    <label for="r-pattern">New rule</label>
+    <input id="r-pattern" type="text" name="pattern" placeholder="e.g. lidl, cafè, affitto" required>
+    <select name="field" title="Match against">
+      <option value="merchant">merchant</option>
+      <option value="description">description</option>
+    </select>
+    <select name="match_type">
+      <option value="fuzzy">fuzzy</option>
+      <option value="contains">contains</option>
+      <option value="exact">exact</option>
+    </select>
+    <select name="category_id" required>
+      {{range .Categories}}{{if ne .Name "Uncategorized"}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
+    </select>
+    <button>Add rule</button>
+  </form>
+
+  {{if .Rules}}
+  <table>
+    {{range $i, $rule := .Rules}}
+    <tr>
+      <td colspan="5">
+        <form class="inline-form" method="post" action="/rules/{{$rule.ID}}/edit">
+          <span class="muted mono">#{{$rule.ID}}</span>
+          <select name="field" title="Match against">
+            <option value="merchant" {{if eq $rule.Field "merchant"}}selected{{end}}>merchant</option>
+            <option value="description" {{if eq $rule.Field "description"}}selected{{end}}>description</option>
+          </select>
+          <input type="text" name="pattern" value="{{$rule.Pattern}}" required style="min-width:14em">
+          <select name="match_type">
+            <option value="exact" {{if eq $rule.MatchType "exact"}}selected{{end}}>exact</option>
+            <option value="contains" {{if eq $rule.MatchType "contains"}}selected{{end}}>contains</option>
+            <option value="fuzzy" {{if eq $rule.MatchType "fuzzy"}}selected{{end}}>fuzzy</option>
+          </select>
+          <select name="category_id">
+            {{range $.Categories}}{{if ne .Name "Uncategorized"}}<option value="{{.ID}}" {{if eq .ID $rule.CategoryID}}selected{{end}}>{{.Name}}</option>{{end}}{{end}}
+          </select>
+          <button>Save</button>
+        </form>
+        <form class="inline-form" method="post" action="/rules/{{$rule.ID}}/delete" onsubmit="return confirm('Delete rule #{{$rule.ID}}?')">
+          <button class="danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}
+  <p class="muted">No rules yet — resolve items in the inbox to grow them, or add one above.</p>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2>Test a match</h2>
+  <form class="inline-form" method="get" action="/rules">
+    <label for="pm">Merchant</label>
+    <input id="pm" type="text" name="pm" placeholder="e.g. lidl" value="{{.PreviewMerchant}}">
+    <label for="pd">Description</label>
+    <input id="pd" type="text" name="pd" placeholder="e.g. affitto luglio" value="{{.PreviewDescription}}">
+    <button>What matches?</button>
+  </form>
+  {{if .PreviewRan}}
+    {{if .PreviewMatched}}
+    <table>
+      <thead><tr><th>Field</th><th>Match</th><th>Pattern</th><th>Category</th></tr></thead>
+      <tbody>
+        {{range .PreviewMatched}}
+        <tr>
+          <td class="muted">{{.Field}}</td>
+          <td class="muted">{{.MatchType}}</td>
+          <td class="mono wrap">{{.Pattern}}</td>
+          <td class="strong">{{.CategoryName}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No rule matches that merchant/description pair.</p>
+    {{end}}
+  {{end}}
+</section>
+{{end}}

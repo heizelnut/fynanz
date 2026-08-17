@@ -63,6 +63,12 @@ const (
 	CatSourceTransfer = "transfer"
 )
 
+// Rule match fields (rules.field column — see categorize package).
+const (
+	RuleFieldMerchant    = "merchant"
+	RuleFieldDescription = "description"
+)
+
 // TransactionInput is the extracted, normalized transaction payload.
 type TransactionInput struct {
 	EntryReference        string
@@ -83,6 +89,7 @@ type TransactionInput struct {
 	CategoryID            *int64
 	CategorySource        string
 	InternalTransfer      bool
+	IsP2P                 bool // person-to-person transfer (never auto-categorized)
 }
 
 // Transaction is a stored transaction row.

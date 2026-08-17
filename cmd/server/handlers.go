@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"fynanz/internal/categorize"
 	"fynanz/internal/metrics"
 	"fynanz/internal/notify"
 	"fynanz/internal/store"
@@ -48,6 +49,10 @@ func newServer(st *store.Store, svc *sync.Service, cfg Config) http.Handler {
 	r.Post("/categories", h.categoriesCreate)
 	r.Post("/categories/{catID}/rename", h.categoriesRename)
 	r.Post("/categories/{catID}/merge", h.categoriesMerge)
+	r.Get("/rules", h.rules)
+	r.Post("/rules", h.rulesCreate)
+	r.Post("/rules/{ruleID}/edit", h.rulesEdit)
+	r.Post("/rules/{ruleID}/delete", h.rulesDelete)
 	r.Get("/settings", h.settings)
 	r.Get("/terms", h.legalPage("Terms of service", "terms.html"))
 	r.Get("/privacy", h.legalPage("Privacy policy", "privacy.html"))
@@ -680,6 +685,124 @@ func (h *handlers) categories(w http.ResponseWriter, r *http.Request) {
 	h.render(w, "categories.html", categoryPageData{pageData: data, CatTxCounts: cc})
 }
 
+type rulesPageData struct {
+	pageData
+	Rules              []store.Rule
+	PreviewRan         bool
+	PreviewMerchant    string
+	PreviewDescription string
+	PreviewMatched     []previewRule
+}
+
+type previewRule struct {
+	Field        string
+	MatchType    string
+	Pattern      string
+	CategoryName string
+}
+
+// rules renders the rule editor: add/edit/delete every (field, pattern) rule,
+// plus a live preview of what a merchant/description pair would match —
+// essential for tuning fuzzy rules (AGENTS.md §5, rule UI landed in v1).
+func (h *handlers) rules(w http.ResponseWriter, r *http.Request) {
+	data, err := h.page(r, "Rules", 50, 1, store.TxFilter{})
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	rules, err := h.store.ListRules(r.Context(), defaultUserID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	data.ActiveNav = "rules"
+	d := rulesPageData{pageData: data, Rules: rules}
+	d.PreviewMerchant = r.URL.Query().Get("pm")
+	d.PreviewDescription = r.URL.Query().Get("pd")
+	if d.PreviewMerchant != "" || d.PreviewDescription != "" {
+		d.PreviewRan = true
+		for _, rl := range rules {
+			if categorize.Matches(categorize.Rule{Pattern: rl.Pattern, MatchType: rl.MatchType, Field: rl.Field},
+				d.PreviewMerchant, d.PreviewDescription) {
+				d.PreviewMatched = append(d.PreviewMatched, previewRule{
+					Field: rl.Field, MatchType: rl.MatchType, Pattern: rl.Pattern,
+					CategoryName: h.categoryName(rl.CategoryID),
+				})
+			}
+		}
+	}
+	h.render(w, "rules.html", d)
+}
+
+// ruleForm reads + validates the add/edit form fields.
+func ruleForm(r *http.Request) (pattern string, catID int64, field, matchType string, err error) {
+	pattern = strings.TrimSpace(r.FormValue("pattern"))
+	catID = strID(r.FormValue("category_id"))
+	field = r.FormValue("field")
+	matchType = r.FormValue("match_type")
+	switch field {
+	case categorize.FieldDescription:
+		pattern = categorize.NormalizeDescription(pattern)
+		if matchType == "" {
+			matchType = categorize.MatchFuzzy
+		}
+	case categorize.FieldMerchant:
+		pattern = categorize.NormalizeMerchant(pattern)
+	default:
+		field = categorize.FieldMerchant
+	}
+	switch matchType {
+	case categorize.MatchFuzzy, categorize.MatchContains:
+	case categorize.MatchExact, "":
+		matchType = categorize.MatchExact
+	default:
+		return "", 0, "", "", fmt.Errorf("unknown match type %q", matchType)
+	}
+	if pattern == "" || catID == 0 {
+		return "", 0, "", "", fmt.Errorf("pattern and category are required")
+	}
+	return pattern, catID, field, matchType, nil
+}
+
+// rulesCreate adds a rule from the editor form (plain POST, like categories).
+func (h *handlers) rulesCreate(w http.ResponseWriter, r *http.Request) {
+	pattern, catID, field, matchType, err := ruleForm(r)
+	if err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	if err := h.store.InsertRule(r.Context(), defaultUserID, catID, pattern, matchType, field); err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/rules?msg=rule+added", http.StatusSeeOther)
+}
+
+// rulesEdit updates one rule (pattern, field, match type, category).
+func (h *handlers) rulesEdit(w http.ResponseWriter, r *http.Request) {
+	ruleID := strID(chi.URLParam(r, "ruleID"))
+	pattern, catID, field, matchType, err := ruleForm(r)
+	if err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	if err := h.store.UpdateRule(r.Context(), defaultUserID, ruleID, catID, pattern, matchType, field); err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/rules?msg=rule+updated", http.StatusSeeOther)
+}
+
+// rulesDelete removes one rule.
+func (h *handlers) rulesDelete(w http.ResponseWriter, r *http.Request) {
+	ruleID := strID(chi.URLParam(r, "ruleID"))
+	if err := h.store.DeleteRule(r.Context(), defaultUserID, ruleID); err != nil {
+		httpRedirErr(w, r, err)
+		return
+	}
+	http.Redirect(w, r, "/rules?msg=rule+deleted", http.StatusSeeOther)
+}
+
 // ebSave persists the Enable Banking settings from the form (DB > env at
 // resolve time; empty field = clear back to env). Applies immediately — the
 // credential resolver reads the DB per request.
@@ -872,7 +995,7 @@ func (h *handlers) exportTransactions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition",
 		fmt.Sprintf(`attachment; filename="fynanz-transactions-%s.csv"`, time.Now().Format("2006-01-02")))
 	cw := csv.NewWriter(w)
-	_ = cw.Write([]string{"date", "account", "merchant", "details", "amount", "currency", "credit_debit", "category", "reference", "status"})
+	_ = cw.Write([]string{"date", "account", "merchant", "details", "amount", "currency", "credit_debit", "category", "p2p", "reference", "status"})
 	for _, t := range rows {
 		row := []string{
 			t.BookingDate,
@@ -883,6 +1006,7 @@ func (h *handlers) exportTransactions(w http.ResponseWriter, r *http.Request) {
 			t.Currency,
 			t.CreditDebit,
 			t.CategoryName,
+			p2pMark(t.IsP2P),
 			t.EntryReference,
 			t.Status,
 		}

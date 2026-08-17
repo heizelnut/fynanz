@@ -83,6 +83,14 @@ attention.
 - Transaction detail + manual category override at any time.
 - Rule-based auto-categorization + Uncategorized inbox with real-time
   resolve.
+- **Rule editor** (`/rules`): view/add/edit/delete rules; each matches a
+  merchant *or* description with `exact` / `contains` / `fuzzy` semantics,
+  plus a live match preview for tuning fuzzy rules.
+- **Person-to-person detection**: transfers between people (no MCC + a
+  transfer bank-transaction code, excluding direct debits) are flagged P2P
+  and **never auto-categorized** — they always land in the inbox, and
+  resolving them writes fuzzy *description*-based rules (the friend's name
+  is not a stable match key).
 - Internal transfer detection (Revolut ↔ Mediolanum).
 - Category management (add/rename/merge).
 - Dashboard: spend by category (current + historical), income vs.
@@ -96,8 +104,6 @@ attention.
 **Deferred to v2+**
 
 - Notes/tags on transactions.
-- Rule management UI (view/edit/delete rules directly, not just via
-  resolving an uncategorized item).
 - Amount-threshold and digest notifications.
 - Top merchants/categories, month-over-month comparison views.
 - CSV export.
@@ -119,15 +125,36 @@ attention.
 - Matching pipeline per incoming transaction:
   1. Normalize merchant/counterparty string from the bank's raw
      description.
-  2. Look up against a local **rules table** (merchant pattern →
-     category), seeded manually + grown from user answers.
+  2. Look up against a local **rules table** (field + pattern → category),
+     seeded manually + grown from user answers. Each rule targets a
+     **merchant** or the **description** (remittance/reference) with one of
+     three semantics: `exact` (identical text), `contains` (substring),
+     `fuzzy` (every meaningful pattern word present, order-insensitive,
+     one-typo tolerant). One category per (user, field, pattern); rules are
+     editable at `/rules`.
   3. If no match: transaction is flagged `Uncategorized` and queued for
      the user to resolve.
+- **Person-to-person rule**: P2P transactions are detected at sync time
+  from narration and skip rule matching entirely — they always land in the
+  inbox. The answer to a P2P item tags the transaction (recorded as a
+  manual override, never re-classified) and grows a fuzzy *description*
+  rule seeded from the reference text.
+  - Detection is **narration-based**, tuned against a live Banca Mediolanum
+    feed where the connector populates neither MCC nor bank transaction
+    codes: `From <Name>` / `To <Name>` reference segments (in/out friend
+    transfers, names may end in a letter initial), or a full SEPA credit
+    (`Cod.Id.Ord:`) to a person-shaped counterparty (`versamento`/
+    `accredito`). Hard excludes: card markers (`CARTA N./CIRCUITO/Cod.
+    MCC/C/O`), direct debits (`ADDEBITO DIRETTO/CORE RCUR/SDD`), self
+    top-ups (`Top-Up by`), payroll (`STIPENDIO`), fees/refunds.
+  - Bare counterparty rows (`Calcagnile Eleonora` vs `Focacciami`) are
+    structurally identical on that feed and are deliberately NOT flagged;
+    they keep behaving as merchants. Detector tuning applies retroactively:
+    reclassify re-derives the flag from persisted narration every sync.
 - **Real-time prompt**: when a new uncategorized transaction lands
   (during sync), the user should see a lightweight in-app notification/
   inbox item asking "What category is this?" — answering it both tags
-  the transaction and writes a new rule (exact merchant match at minimum;
-  consider fuzzy/substring matching later).
+  the transaction and writes a new rule.
 - Categories should be user-editable (rename, merge, add) without a code
   change — stored in the DB, not hardcoded enums.
 - Internal transfer detection: a transaction moving money between the

@@ -28,3 +28,16 @@ func NormalizeMerchant(s string) string {
 	s = strings.Join(strings.Fields(s), " ")
 	return s
 }
+
+// NormalizeDescription canonicalizes remittance/reference text for matching:
+// lowercase, single spaces. It deliberately does NOT strip the sandbox
+// artifact suffix — that strip exists only for merchant names; a reference
+// ("dinner", "affitto luglio") is user-authored free text.
+func NormalizeDescription(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	s = strings.ToLower(s)
+	return strings.Join(strings.Fields(s), " ")
+}

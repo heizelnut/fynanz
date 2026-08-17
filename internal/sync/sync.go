@@ -436,7 +436,7 @@ func (s *Service) SyncLink(ctx context.Context, linkID int64) (res Result, err e
 func toCatRules(rules []store.Rule) []categorize.Rule {
 	out := make([]categorize.Rule, 0, len(rules))
 	for _, r := range rules {
-		out = append(out, categorize.Rule{ID: r.ID, CategoryID: r.CategoryID, Pattern: r.Pattern, MatchType: r.MatchType})
+		out = append(out, categorize.Rule{ID: r.ID, CategoryID: r.CategoryID, Pattern: r.Pattern, MatchType: r.MatchType, Field: r.Field})
 	}
 	return out
 }
@@ -461,7 +461,24 @@ func (s *Service) categorizeInput(inp *store.TransactionInput, rules []categoriz
 		}
 		return
 	}
-	if id, ok := categorize.Classify(rules, inp.MerchantNormalized); ok {
+	// Person-to-person detection runs on persisted fields (mcc, normalized
+	// merchant, remittance + note narration) so reclassify reproduces the
+	// exact same verdict for older rows.
+	inp.IsP2P = categorize.IsP2P(categorize.P2PSignal{
+		MerchantCategoryCode: inp.MerchantCategoryCode,
+		Merchant:             inp.MerchantNormalized,
+		Narrative:            joinStrings([]string{inp.RemittanceInformation, inp.Note}, " | "),
+	})
+	if inp.IsP2P {
+		// Person-to-person: never auto-categorized, no matter what rules say
+		// (AGENTS.md §4/§5 — the friend's name is not a stable key and
+		// incoming/outgoing money to the same person is ambiguous). Stays in
+		// the inbox; resolving it writes a description-based rule instead.
+		inp.CategoryID = nil
+		inp.CategorySource = ""
+		return
+	}
+	if id, ok := categorize.Classify(rules, inp.MerchantNormalized, inp.RemittanceInformation); ok {
 		inp.CategoryID = &id
 		inp.CategorySource = store.CatSourceRule
 	}
@@ -488,6 +505,17 @@ func (s *Service) transferCategoryID(ctx context.Context, userID int64) *int64 {
 func (s *Service) Reclassify(ctx context.Context) error {
 	userID, err := s.store.EnsureDefaultUser(ctx)
 	if err != nil {
+		return err
+	}
+	// Re-derive P2P flags from stored narration so detector tuning applies
+	// retroactively (rows synced under an older detector keep stale flags),
+	// then strip rule-derived categories from P2P rows: a P2P answer is
+	// always manual, so any 'rule' source on a flagged row is a leftover and
+	// the row returns to the inbox.
+	if err := s.refreshP2PFlags(ctx, userID); err != nil {
+		return err
+	}
+	if err := s.store.UncategorizeP2PRules(ctx, userID); err != nil {
 		return err
 	}
 	rules, err := s.store.ListRules(ctx, userID)
@@ -535,11 +563,45 @@ func (s *Service) Reclassify(ctx context.Context) error {
 	return nil
 }
 
+// refreshP2PFlags re-derives the person-to-person flag for every transaction
+// from the persisted narration, updating rows that changed. Runs inside
+// reclassify so detector tuning lands retroactively on old rows.
+func (s *Service) refreshP2PFlags(ctx context.Context, userID int64) error {
+	for offset := 0; ; offset += batchSize {
+		txs, err := s.store.RecentTransactions(ctx, userID, store.TxFilter{}, batchSize, offset)
+		if err != nil {
+			return err
+		}
+		if len(txs) == 0 {
+			return nil
+		}
+		for _, t := range txs {
+			flag := categorize.IsP2P(categorize.P2PSignal{
+				MerchantCategoryCode: t.MerchantCategoryCode,
+				Merchant:             t.MerchantNormalized,
+				Narrative:            joinStrings([]string{t.RemittanceInformation, t.Note}, " | "),
+			})
+			if flag != t.IsP2P {
+				if err := s.store.SetP2PFlag(ctx, userID, t.ID, flag); err != nil {
+					return err
+				}
+			}
+		}
+		if len(txs) < batchSize {
+			return nil
+		}
+	}
+}
+
 const batchSize = 500
 
 // ResolveInbox categorizes one inbox item and grows the rules table from the
-// user's answer (AGENTS.md §5: exact merchant match at minimum). Returns the
-// rule pattern used (empty when there is nothing to match on).
+// user's answer (AGENTS.md §5). Ordinary transactions teach an exact
+// merchant rule; person-to-person transactions teach a fuzzy description
+// rule (the friend's name is worthless as a key — only the reference
+// matters — and P2P rows can never auto-match anyway, so the tx itself is
+// recorded as a manual answer). Returns the rule pattern used (empty when
+// there is nothing to match on).
 func (s *Service) ResolveInbox(ctx context.Context, txID, categoryID int64) (string, error) {
 	userID, err := s.store.EnsureDefaultUser(ctx)
 	if err != nil {
@@ -549,12 +611,20 @@ func (s *Service) ResolveInbox(ctx context.Context, txID, categoryID int64) (str
 	if err != nil {
 		return "", err
 	}
-	if err := s.store.SetTransactionCategory(ctx, userID, txID, &categoryID, store.CatSourceRule); err != nil {
+	field, matchType, pattern := categorize.FieldMerchant, categorize.MatchExact, tx.MerchantNormalized
+	source := store.CatSourceRule
+	if tx.IsP2P {
+		field, matchType = categorize.FieldDescription, categorize.MatchFuzzy
+		// The reference ("spritz | From Riccardo C" -> "spritz") is what
+		// matters, not the From/To boilerplate.
+		pattern = categorize.ReferenceForRule(tx.RemittanceInformation)
+		source = store.CatSourceManual
+	}
+	if err := s.store.SetTransactionCategory(ctx, userID, txID, &categoryID, source); err != nil {
 		return "", err
 	}
-	pattern := tx.MerchantNormalized
 	if pattern != "" {
-		if err := s.store.InsertRule(ctx, userID, categoryID, pattern, "exact"); err != nil {
+		if err := s.store.InsertRule(ctx, userID, categoryID, pattern, matchType, field); err != nil {
 			return "", err
 		}
 	}

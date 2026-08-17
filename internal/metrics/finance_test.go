@@ -46,7 +46,7 @@ func TestFinanceCollector(t *testing.T) {
 	if ins != 4 {
 		t.Fatalf("inserted %d, want 4", ins)
 	}
-	if err := st.InsertRule(ctx, uid, cats[1].ID, "pat", "exact"); err != nil {
+	if err := st.InsertRule(ctx, uid, cats[1].ID, "pat", "exact", "merchant"); err != nil {
 		t.Fatal(err)
 	}
 	_ = st.SetSetting(ctx, uid, "x", "y")

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 )
@@ -203,7 +204,7 @@ func TestCategoryAssignmentAndInbox(t *testing.T) {
 	if err := st.SetTransactionCategory(ctx, uid, items[0].ID, &groceries, CatSourceRule); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.InsertRule(ctx, uid, groceries, "s market", "exact"); err != nil {
+	if err := st.InsertRule(ctx, uid, groceries, "s market", "exact", RuleFieldMerchant); err != nil {
 		t.Fatal(err)
 	}
 
@@ -240,7 +241,7 @@ func TestMergeCategory(t *testing.T) {
 		{EntryReference: "r2", BookingDate: "2025-01-02", AmountMinor: -2, Currency: "EUR", CreditDebit: "DBIT", CategoryID: g(dst), CategorySource: CatSourceRule, MerchantNormalized: "pat2"},
 	})
 	_ = ins
-	_ = st.InsertRule(ctx, uid, src, "pat", "exact")
+	_ = st.InsertRule(ctx, uid, src, "pat", "exact", RuleFieldMerchant)
 
 	if err := st.MergeCategory(ctx, uid, src, dst); err != nil {
 		t.Fatal(err)
@@ -257,6 +258,101 @@ func TestMergeCategory(t *testing.T) {
 	}
 	if _, err := st.CreateCategory(ctx, uid, "Groceries"); err != nil {
 		t.Logf("(seeded Groceries may have been merged away)")
+	}
+}
+
+func TestRulesCRUD(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+	cats, _ := st.ListCategories(ctx, uid)
+	groceries, income := cats[1].ID, cats[0].ID
+
+	// Insert with explicit field/match type.
+	if err := st.InsertRule(ctx, uid, groceries, "s market", "contains", RuleFieldMerchant); err != nil {
+		t.Fatal(err)
+	}
+	// Same (field, pattern) again -> idempotent no-op, keeps first category.
+	if err := st.InsertRule(ctx, uid, income, "s market", "contains", RuleFieldMerchant); err != nil {
+		t.Fatal(err)
+	}
+	// Same pattern text, other field -> its own rule.
+	if err := st.InsertRule(ctx, uid, income, "affitto", "fuzzy", RuleFieldDescription); err != nil {
+		t.Fatal(err)
+	}
+	rules, err := st.ListRules(ctx, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules) != 2 {
+		t.Fatalf("rules = %d, want 2 (duplicate merchant pattern collapsed)", len(rules))
+	}
+	if rules[0].Pattern != "s market" || rules[0].CategoryID != groceries || rules[0].Field != RuleFieldMerchant || rules[0].MatchType != "contains" {
+		t.Errorf("rule 0 wrong: %+v", rules[0])
+	}
+	if rules[1].Field != RuleFieldDescription || rules[1].MatchType != "fuzzy" {
+		t.Errorf("rule 1 wrong: %+v", rules[1])
+	}
+
+	// Update: retarget the description rule to groceries and change match.
+	if err := st.UpdateRule(ctx, uid, rules[1].ID, groceries, "affitto", "contains", RuleFieldDescription); err != nil {
+		t.Fatal(err)
+	}
+	// Updating onto an existing (field, pattern) must fail friendlily.
+	if err := st.UpdateRule(ctx, uid, rules[1].ID, income, "s market", "contains", RuleFieldMerchant); err == nil {
+		t.Error("update onto duplicate (field, pattern) should fail")
+	}
+	if err := st.UpdateRule(ctx, uid, 999, income, "x", "exact", RuleFieldMerchant); err != sql.ErrNoRows {
+		t.Errorf("update of missing rule = %v, want ErrNoRows", err)
+	}
+
+	if err := st.DeleteRule(ctx, uid, rules[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteRule(ctx, uid, rules[0].ID); err != sql.ErrNoRows {
+		t.Errorf("delete of missing rule = %v, want ErrNoRows", err)
+	}
+	left, _ := st.ListRules(ctx, uid)
+	if len(left) != 1 || left[0].ID != rules[1].ID {
+		t.Errorf("after delete rules = %+v", left)
+	}
+}
+
+func TestUncategorizeP2PRules(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+	link, _ := st.CreateLink(ctx, uid, "sandbox", "Mock ASPSP", "FI")
+	ids, _ := st.UpsertAccounts(ctx, uid, link.ID, []AccountInput{{UID: "u1", IdentificationHash: "h1"}})
+	cats, _ := st.ListCategories(ctx, uid)
+	g := func(c int64) *int64 { return &c }
+
+	// A P2P row left over with a rule category (pre-detection data) and a
+	// correctly manual one; plus a rule-categorized NON-p2p control.
+	_, _, err := st.InsertTransactions(ctx, uid, ids["u1"], []TransactionInput{
+		{EntryReference: "p1", BookingDate: "2025-01-01", AmountMinor: -100, Currency: "EUR", CreditDebit: "DBIT", IsP2P: true, CategoryID: g(cats[1].ID), CategorySource: CatSourceRule, MerchantNormalized: "mario"},
+		{EntryReference: "p2", BookingDate: "2025-01-02", AmountMinor: -200, Currency: "EUR", CreditDebit: "DBIT", IsP2P: true, CategoryID: g(cats[1].ID), CategorySource: CatSourceManual, MerchantNormalized: "luigi"},
+		{EntryReference: "p3", BookingDate: "2025-01-03", AmountMinor: -300, Currency: "EUR", CreditDebit: "DBIT", IsP2P: false, CategoryID: g(cats[1].ID), CategorySource: CatSourceRule, MerchantNormalized: "lidl"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UncategorizeP2PRules(ctx, uid); err != nil {
+		t.Fatal(err)
+	}
+	txs, _ := st.RecentTransactions(ctx, uid, TxFilter{}, 10, 0)
+	src := map[string]Transaction{}
+	for _, tx := range txs {
+		src[tx.EntryReference] = tx
+	}
+	if src["p1"].CategoryID != nil || src["p1"].CategorySource != "" {
+		t.Errorf("p2p rule-categorized row not stripped: %+v", src["p1"])
+	}
+	if src["p2"].CategoryID == nil || src["p2"].CategorySource != CatSourceManual {
+		t.Errorf("p2p manual answer must survive: %+v", src["p2"])
+	}
+	if src["p3"].CategoryID == nil {
+		t.Errorf("non-p2p rule category must survive: %+v", src["p3"])
 	}
 }
 

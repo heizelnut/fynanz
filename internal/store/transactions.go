@@ -28,8 +28,8 @@ func (s *Store) InsertTransactions(ctx context.Context, userID, accountID int64,
 			(user_id, account_id, entry_reference, booking_date, value_date, amount_minor,
 			 currency, credit_debit, status, merchant_category_code, counterparty,
 			 counterparty_account, remittance_information, note, balance_after_minor, raw,
-			 merchant_normalized, category_id, category_source, internal_transfer)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+			 merchant_normalized, category_id, category_source, internal_transfer, is_p2p)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, 0, fmt.Errorf("store: tx prepare: %w", err)
 	}
@@ -49,7 +49,7 @@ func (s *Store) InsertTransactions(ctx context.Context, userID, accountID int64,
 			t.AmountMinor, t.Currency, t.CreditDebit, t.Status, t.MerchantCategoryCode,
 			t.Counterparty, t.CounterpartyAccount, t.RemittanceInformation, t.Note,
 			t.BalanceAfterMinor, t.Raw, t.MerchantNormalized, t.CategoryID,
-			t.CategorySource, t.InternalTransfer)
+			t.CategorySource, t.InternalTransfer, t.IsP2P)
 		if err != nil {
 			return inserted, skipped, fmt.Errorf("store: insert tx %s: %w", ref, err)
 		}
@@ -73,7 +73,7 @@ const txCols = `t.id, t.user_id, t.account_id, t.entry_reference, t.booking_date
 	t.amount_minor, t.currency, t.credit_debit, t.status, t.merchant_category_code,
 	t.counterparty, t.counterparty_account, t.remittance_information, t.note,
 	t.balance_after_minor, t.raw, t.created_at, t.merchant_normalized, t.category_id,
-	t.category_source, t.internal_transfer`
+	t.category_source, t.internal_transfer, t.is_p2p`
 
 const txFrom = `FROM transactions t LEFT JOIN categories c ON c.id = t.category_id`
 
@@ -152,7 +152,7 @@ func (s *Store) RecentTransactions(ctx context.Context, userID int64, f TxFilter
 }
 
 // scanTxJoined reads a row produced by `txCols + ", COALESCE(c.name, ”)"` —
-// one extra column after the 22 tx fields (database/sql Scan requires an
+// one extra column after the 23 tx fields (database/sql Scan requires an
 // exact dest count).
 func scanTxJoined(row interface{ Scan(...any) error }) (Transaction, error) {
 	var t Transaction
@@ -161,7 +161,7 @@ func scanTxJoined(row interface{ Scan(...any) error }) (Transaction, error) {
 		&t.MerchantCategoryCode, &t.Counterparty, &t.CounterpartyAccount,
 		&t.RemittanceInformation, &t.Note, &t.BalanceAfterMinor, &t.Raw, &t.CreatedAt,
 		&t.MerchantNormalized, &t.CategoryID, &t.CategorySource, &t.InternalTransfer,
-		&t.CategoryName)
+		&t.IsP2P, &t.CategoryName)
 	return t, err
 }
 
@@ -260,6 +260,32 @@ func (s *Store) ListUncategorized(ctx context.Context, userID int64, limit, offs
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// SetP2PFlag updates the person-to-person flag on one transaction (used by
+// the reclassify pass that re-derives the flag after detector changes).
+func (s *Store) SetP2PFlag(ctx context.Context, userID, txID int64, p2p bool) error {
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE transactions SET is_p2p = ? WHERE id = ? AND user_id = ?`,
+		p2p, txID, userID); err != nil {
+		return fmt.Errorf("store: set p2p flag %d: %w", txID, err)
+	}
+	return nil
+}
+
+// UncategorizeP2PRules removes rule-derived categories from person-to-person
+// transactions. A rule can never auto-categorize a P2P transfer — only
+// manual answers stick — so any P2P row carrying a 'rule' category is a
+// leftover from before P2P detection and returns to the inbox.
+func (s *Store) UncategorizeP2PRules(ctx context.Context, userID int64) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE transactions SET category_id = NULL, category_source = ''
+		 WHERE user_id = ? AND is_p2p = 1 AND category_source = ?`,
+		userID, CatSourceRule)
+	if err != nil {
+		return fmt.Errorf("store: uncategorize p2p: %w", err)
+	}
+	return nil
 }
 
 // GetTransaction returns one of the user's transactions by id.

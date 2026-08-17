@@ -30,7 +30,7 @@ func mustStatic() fs.FS {
 // (base + partials + page) so every page's {{define "content"}} is
 // unambiguous — parsing all pages in one set would make the last definition
 // win for every request.
-var pageFiles = []string{"index.html", "transactions.html", "inbox.html", "categories.html", "notifications.html", "settings.html", "terms.html", "privacy.html"}
+var pageFiles = []string{"index.html", "transactions.html", "inbox.html", "categories.html", "rules.html", "notifications.html", "settings.html", "terms.html", "privacy.html"}
 
 // loadTemplates parses one template set per page from the embedded FS.
 func (h *handlers) loadTemplates() error {
@@ -177,6 +177,14 @@ func eventsSummary(eventsJSON string) string {
 }
 
 func urlEncode(s string) string { return url.QueryEscape(s) }
+
+// p2pMark renders the CSV p2p flag: "yes" for person-to-person transfers.
+func p2pMark(p2p bool) string {
+	if p2p {
+		return "yes"
+	}
+	return ""
+}
 
 func httpError(w http.ResponseWriter, err error) {
 	http.Error(w, err.Error(), http.StatusInternalServerError)

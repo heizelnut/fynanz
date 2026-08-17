@@ -5,7 +5,8 @@
 <section class="panel">
   <h2>Needs a category <span class="muted" id="inbox-count">{{if .UncategorizedN}}({{.UncategorizedN}} open){{end}}</span></h2>
   {{if .Uncategorized}}{{with index .Uncategorized 0}}
-  <p class="muted">Pick the category — this also teaches the rule for “{{.MerchantNormalized}}” and similar.</p>
+  {{if .IsP2P}}<p class="muted">Person-to-person transfer — pick a category. No rule will ever auto-categorize these; your answer teaches a <b>description</b> rule instead (the friend's name is not a reliable match key).</p>
+  {{else}}<p class="muted">Pick the category — this also teaches the rule for “{{.MerchantNormalized}}” and similar.</p>{{end}}
   {{end}}{{end}}
   <table>
     <thead>
@@ -33,7 +34,7 @@
   {{range .Uncategorized}}
   <tr id="tx-{{.ID}}">
     <td class="muted" data-label="Date">{{.BookingDate}}</td>
-    <td class="strong wrap mono copyable" data-label="Merchant">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}</td>
+    <td class="strong wrap mono copyable" data-label="Merchant">{{if .MerchantNormalized}}{{.MerchantNormalized}}{{else}}{{.Counterparty}}{{end}}{{if .IsP2P}} <span class="tag p2p" title="person-to-person transfer">P2P</span>{{end}}</td>
     <td class="muted wrap mono copyable" data-label="Details">{{.RemittanceInformation}}</td>
     <td class="num {{if lt .AmountMinor 0}}neg{{else}}pos{{end}}" data-label="Amount">{{fmtAmount .AmountMinor .Currency}}</td>
     <td data-label="Category">

@@ -17,6 +17,7 @@
       <a href="/transactions" {{if eq .ActiveNav "transactions"}}class="active"{{end}}><span class="nav-full">Transactions</span><span class="nav-short mono">Tx</span></a>
       <a href="/inbox" {{if eq .ActiveNav "inbox"}}class="active"{{end}}><span class="nav-full">Inbox</span><span class="nav-short mono">Ib</span>{{if .UncategorizedN}} <span class="badge-count" id="uncat-badge">{{.UncategorizedN}}</span>{{end}}</a>
       <a href="/categories" {{if eq .ActiveNav "categories"}}class="active"{{end}}><span class="nav-full">Categories</span><span class="nav-short mono">Ct</span></a>
+      <a href="/rules" {{if eq .ActiveNav "rules"}}class="active"{{end}}><span class="nav-full">Rules</span><span class="nav-short mono">Ru</span></a>
       <a href="/notifications" {{if eq .ActiveNav "notifications"}}class="active"{{end}}><span class="nav-full">Notifications</span><span class="nav-short mono">Nt</span></a>
       <a href="/settings" {{if eq .ActiveNav "settings"}}class="active"{{end}}><span class="nav-full">Settings</span><span class="nav-short mono">St</span></a>
     </nav>

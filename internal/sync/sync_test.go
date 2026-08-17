@@ -290,7 +290,7 @@ func TestRuleAndTransferClassification(t *testing.T) {
 	// Pre-seed a rule (as if learned from a previous resolve).
 	cats, _ := st.ListCategories(ctx, uid)
 	groceries := cats[1].ID // Groceries
-	if err := st.InsertRule(ctx, uid, groceries, "s market", "exact"); err != nil {
+	if err := st.InsertRule(ctx, uid, groceries, "s market", "exact", "merchant"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -363,6 +363,125 @@ func TestRuleAndTransferClassification(t *testing.T) {
 	}
 	if n, _ := st.UncategorizedCount(ctx, uid); n != 0 {
 		t.Errorf("uncategorized after resolution = %d, want 0", n)
+	}
+}
+
+// TestP2PAlwaysInbox: person-to-person transfers are never auto-categorized,
+// even when a merchant rule would match the friend's name (the point of P2P
+// detection: every such transaction lands in the inbox). Resolving one writes
+// a fuzzy DESCRIPTION rule, which then auto-categorizes non-P2P transactions
+// carrying the same reference text.
+func TestP2PAlwaysInbox(t *testing.T) {
+	f := fixtureEB()
+	f.details = Account{
+		AccountID: AccountIdentification{Iban: "FI1234567890"}, Name: "Mock Personal",
+		Product: "Mock", Currency: "EUR",
+	}
+	f.txnsPage1 = TransactionsResponse{Transactions: []Transaction{
+		// A friend sending money: no MCC, "reference | From <Name>" narration
+		// (the real-feed P2P fingerprint).
+		{EntryReference: "t-p2p", TransactionAmount: Amount{Currency: "EUR", Amount: "75.00"},
+			CreditDebitIndicator: "CRDT", Status: "BOOK", BookingDate: "2025-02-10",
+			Debtor:                &PartyIdentification{Name: "Mario Rossi"},
+			RemittanceInformation: []string{"affitto | From Mario Rossi"}},
+		// A merchant with the same reference text: no From/To, no SEPA order
+		// markers, so it is NOT p2p and can be description-rule matched.
+		{EntryReference: "t-rent", TransactionAmount: Amount{Currency: "EUR", Amount: "600.00"},
+			CreditDebitIndicator: "DBIT", Status: "BOOK", BookingDate: "2025-02-09",
+			Creditor:              &PartyIdentification{Name: "Immobiliare Vera"},
+			RemittanceInformation: []string{"affitto luglio 2025"}},
+	}}
+	svc, st := newTestService(t, f)
+	ctx := context.Background()
+	uid, _ := st.EnsureDefaultUser(ctx)
+	cats, _ := st.ListCategories(ctx, uid)
+	income := cats[0].ID // Income
+
+	// A merchant rule on the friend's name exists and must NOT win.
+	if err := st.InsertRule(ctx, uid, income, "mario rossi", "exact", "merchant"); err != nil {
+		t.Fatal(err)
+	}
+
+	link, _, err := svc.StartLink(ctx, "sandbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CompleteLink(ctx, link.State, "code-123"); err != nil {
+		t.Fatal(err)
+	}
+
+	txs, _ := st.RecentTransactions(ctx, uid, store.TxFilter{}, 10, 0)
+	byRef := map[string]store.Transaction{}
+	for _, tx := range txs {
+		byRef[tx.EntryReference] = tx
+	}
+	p2p := byRef["t-p2p"]
+	if !p2p.IsP2P {
+		t.Error("friend transfer not flagged P2P")
+	}
+	if p2p.CategoryID != nil || p2p.CategorySource != "" {
+		t.Errorf("P2P tx auto-categorized despite merchant rule: %+v", p2p)
+	}
+	rent := byRef["t-rent"]
+	if rent.IsP2P {
+		t.Error("merchant without transfer signal flagged P2P")
+	}
+	if rent.CategoryID != nil {
+		t.Errorf("merchant row prematurely categorized: %+v", rent)
+	}
+
+	// Resolve the friend transfer: category = manual, and a fuzzy description
+	// rule is grown — not a merchant rule on the friend's name.
+	pattern, err := svc.ResolveInbox(ctx, p2p.ID, income)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pattern != "affitto" {
+		t.Errorf("P2P resolve pattern = %q, want the reference text", pattern)
+	}
+	got, _ := st.GetTransaction(ctx, uid, p2p.ID)
+	if got.CategorySource != store.CatSourceManual {
+		t.Errorf("P2P answer source = %q, want manual (so reclassify keeps it)", got.CategorySource)
+	}
+	rules, _ := st.ListRules(ctx, uid)
+	var descRule *store.Rule
+	for i := range rules {
+		if rules[i].Field == "description" && rules[i].Pattern == "affitto" {
+			descRule = &rules[i]
+		}
+	}
+	if descRule == nil || descRule.MatchType != "fuzzy" {
+		t.Errorf("expected fuzzy description rule, got %+v", rules)
+	}
+
+	// Next sync: another merchant carrying "affitto" in its reference is
+	// auto-categorized by the description rule; the P2P flow never applies.
+	f.txnsAfter = []Transaction{
+		{EntryReference: "t-rent2", TransactionAmount: Amount{Currency: "EUR", Amount: "600.00"},
+			CreditDebitIndicator: "DBIT", Status: "BOOK", BookingDate: "2025-02-11",
+			Creditor:              &PartyIdentification{Name: "Immobiliare Vera"},
+			RemittanceInformation: []string{"affitto settembre"}},
+	}
+	if _, err := svc.SyncLink(ctx, link.ID); err != nil {
+		t.Fatal(err)
+	}
+	txs, _ = st.RecentTransactions(ctx, uid, store.TxFilter{}, 10, 0)
+	var rent2 *store.Transaction
+	for i := range txs {
+		if txs[i].EntryReference == "t-rent2" {
+			rent2 = &txs[i]
+		}
+	}
+	if rent2 == nil {
+		t.Fatal("t-rent2 not synced")
+	}
+	if rent2.CategoryID == nil || *rent2.CategoryID != income || rent2.CategorySource != store.CatSourceRule {
+		t.Errorf("description rule did not categorize merchant: %+v", rent2)
+	}
+	// The original merchant row (same description, synced pre-rule) is
+	// reclassified by the startup-style pass at end of sync.
+	if n, _ := st.UncategorizedCount(ctx, uid); n != 0 {
+		t.Errorf("uncategorized = %d, want 0 (reclassify should apply the new rule)", n)
 	}
 }
 
