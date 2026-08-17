@@ -99,9 +99,14 @@ type pageData struct {
 	FilterFrom     string
 	FilterTo       string
 	FilterQ        string
-	PagerBase      string                    // "/transactions?limit=N&account=…" for page links
-	ExportQS       string                    // filter-only query string for the CSV export link
-	Events         []store.NotificationEvent // notification history (Notifications tab)
+	FilterP2P      string
+	// Pre-built query strings as template.URL: html/template would otherwise
+	// URL-escape them in href context ("?q=a&p2p=0" becomes "q%3da%26p2p%3d0",
+	// a single mangled param) — which silently dropped every filter from the
+	// export and pagination links.
+	PagerBase template.URL              // "/transactions?limit=N&account=…" for page links
+	ExportQS  template.URL              // filter-only query string for the CSV export link
+	Events    []store.NotificationEvent // notification history (Notifications tab)
 }
 
 // dashboardData is everything the insights panels need (milestone 7); empty
@@ -358,6 +363,7 @@ func (h *handlers) transactions(w http.ResponseWriter, r *http.Request) {
 	filter.DateFrom = r.URL.Query().Get("date_from")
 	filter.DateTo = r.URL.Query().Get("date_to")
 	filter.Query = strings.TrimSpace(r.URL.Query().Get("q"))
+	filter.P2P = p2pFilterValue(r.URL.Query().Get("p2p"))
 
 	full, err := h.page(r, "Transactions", limit, page, filter)
 	if err != nil {
@@ -366,10 +372,22 @@ func (h *handlers) transactions(w http.ResponseWriter, r *http.Request) {
 	}
 	full.ActiveNav = "transactions"
 	full.FilterAccount, full.FilterCategory = echo.FilterAccount, echo.FilterCategory
-	full.FilterFrom, full.FilterTo, full.FilterQ = echo.FilterFrom, echo.FilterTo, echo.FilterQ
-	full.PagerBase = pagerBase(limit, full.FilterAccount, full.FilterCategory, full.FilterFrom, full.FilterTo, full.FilterQ)
-	full.ExportQS = filterQS(full.FilterAccount, full.FilterCategory, full.FilterFrom, full.FilterTo, full.FilterQ)
+	full.FilterFrom, full.FilterTo, full.FilterQ, full.FilterP2P = echo.FilterFrom, echo.FilterTo, echo.FilterQ, echo.FilterP2P
+	full.PagerBase = pagerBase("/transactions", limit, full.FilterAccount, full.FilterCategory, full.FilterFrom, full.FilterTo, full.FilterQ, full.FilterP2P)
+	full.ExportQS = filterQS(full.FilterAccount, full.FilterCategory, full.FilterFrom, full.FilterTo, full.FilterQ, full.FilterP2P)
 	h.render(w, "transactions.html", full)
+}
+
+// p2pFilterValue maps the "p2p=1|0" query parameter to the tri-state filter.
+// Anything else (absent, "all", junk) means "both kinds".
+func p2pFilterValue(v string) int {
+	switch v {
+	case "1", "true":
+		return store.P2POnly
+	case "0", "false":
+		return store.P2PExcluded
+	}
+	return store.P2PAny
 }
 
 // FromQ fills the filter echo fields (template values) from the query.
@@ -379,35 +397,40 @@ func (d *pageData) FromQ(r *http.Request) {
 	d.FilterFrom = r.URL.Query().Get("date_from")
 	d.FilterTo = r.URL.Query().Get("date_to")
 	d.FilterQ = r.URL.Query().Get("q")
+	d.FilterP2P = r.URL.Query().Get("p2p")
 }
 
 // filterQS builds the query string for the export link (no limit/page).
-func filterQS(account, category, from, to, q string) string {
+// Returns template.URL: the value is inserted into an href verbatim (with
+// HTML escaping), bypassing html/template's URL escaper that would corrupt
+// the pre-built query.
+func filterQS(account, category, from, to, q, p2p string) template.URL {
 	v := url.Values{}
 	for key, val := range map[string]string{
 		"account": account, "category": category,
-		"date_from": from, "date_to": to, "q": q,
+		"date_from": from, "date_to": to, "q": q, "p2p": p2p,
 	} {
 		if val != "" {
 			v.Set(key, val)
 		}
 	}
-	return v.Encode()
+	return template.URL(v.Encode())
 }
 
-// pagerBase builds "/transactions?limit=N&…filters" for page links.
-func pagerBase(limit int, account, category, from, to, q string) string {
+// pagerBase builds "<path>?limit=N&…filters" for page links (safe URL type,
+// same rationale as filterQS).
+func pagerBase(path string, limit int, account, category, from, to, q, p2p string) template.URL {
 	v := url.Values{}
 	v.Set("limit", strconv.Itoa(limit))
 	for key, val := range map[string]string{
 		"account": account, "category": category,
-		"date_from": from, "date_to": to, "q": q,
+		"date_from": from, "date_to": to, "q": q, "p2p": p2p,
 	} {
 		if val != "" {
 			v.Set(key, val)
 		}
 	}
-	return "/transactions?" + v.Encode()
+	return template.URL(path + "?" + v.Encode())
 }
 
 func (h *handlers) page(r *http.Request, title string, limit, page int, filter store.TxFilter) (pageData, error) {
@@ -497,7 +520,7 @@ func (h *handlers) inbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Pagination = makePagination(page, limit, total)
-	data.PagerBase = "/inbox?limit=" + strconv.Itoa(limit)
+	data.PagerBase = pagerBase("/inbox", limit, "", "", "", "", "", "")
 	d := inboxPageData{pageData: data, ResolvedCategory: r.URL.Query().Get("done")}
 	d.Uncategorized = items
 	d.ActiveNav = "inbox"
@@ -556,7 +579,7 @@ func (h *handlers) inboxResolve(w http.ResponseWriter, r *http.Request) {
 		Pagination:     makePagination(page, limit, total),
 		Uncategorized:  items,
 		UncategorizedN: total,
-		PagerBase:      "/inbox?limit=" + strconv.Itoa(limit),
+		PagerBase:      pagerBase("/inbox", limit, "", "", "", "", "", ""),
 	}
 	if cats, err := h.store.ListCategories(ctx, user); err == nil {
 		d.Categories = cats
@@ -969,6 +992,7 @@ func txFilterFromQuery(v url.Values) store.TxFilter {
 	f.DateFrom = v.Get("date_from")
 	f.DateTo = v.Get("date_to")
 	f.Query = strings.TrimSpace(v.Get("q"))
+	f.P2P = p2pFilterValue(v.Get("p2p"))
 	return f
 }
 
@@ -1054,7 +1078,7 @@ func (h *handlers) notifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Pagination = makePagination(page, limit, total)
-	data.PagerBase = "/notifications?limit=" + strconv.Itoa(limit)
+	data.PagerBase = pagerBase("/notifications", limit, "", "", "", "", "", "")
 	data.Events = evs
 	n := struct {
 		pageData

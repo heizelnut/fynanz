@@ -81,15 +81,26 @@ const txFrom = `FROM transactions t LEFT JOIN categories c ON c.id = t.category_
 const UncategorizedCat = -1
 
 // TxFilter narrows transaction listings: account, category
-// (UncategorizedCat for "no category"), booking-date range and a free-text
-// query on merchant/counterparty. Zero values mean "all".
+// (UncategorizedCat for "no category"), booking-date range, a P2P flag and a
+// free-text query on merchant/counterparty. Zero values mean "all".
+//
+// P2P is tri-state: P2PAny = both kinds, P2POnly = only person-to-person,
+// P2PExcluded = only non-P2P rows.
 type TxFilter struct {
 	AccountID  int64
 	CategoryID int64
 	DateFrom   string
 	DateTo     string
 	Query      string
+	P2P        int
 }
+
+// P2P filter values (TxFilter.P2P).
+const (
+	P2PAny      = 0
+	P2POnly     = 1
+	P2PExcluded = -1
+)
 
 // txWhere builds the shared WHERE clause for listings and counts.
 func txWhere(userID int64, f TxFilter) (string, []any) {
@@ -117,6 +128,12 @@ func txWhere(userID int64, f TxFilter) (string, []any) {
 		pat := "%" + likeEscape(f.Query) + "%"
 		q += ` AND (t.merchant_normalized LIKE ? ESCAPE '\' OR t.counterparty LIKE ? ESCAPE '\')`
 		args = append(args, pat, pat)
+	}
+	switch f.P2P {
+	case P2POnly:
+		q += ` AND t.is_p2p = 1`
+	case P2PExcluded:
+		q += ` AND t.is_p2p = 0`
 	}
 	return q, args
 }

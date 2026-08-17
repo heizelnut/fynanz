@@ -21,11 +21,13 @@
     <input id="f-to" type="date" name="date_to" value="{{.FilterTo}}">
     <label for="f-q">Search</label>
     <input id="f-q" type="search" name="q" value="{{.FilterQ}}" placeholder="merchant…">
+    <label for="f-p2p">P2P</label>
+    <input id="f-p2p" type="checkbox" name="p2p" value="1" {{if eq .FilterP2P "1"}}checked{{end}} title="Only person-to-person transfers">
     <label for="limit">Per page</label>
     <input type="number" name="limit" id="limit" value="{{.Pagination.Limit}}" min="1" max="500" style="width:5em">
     <button type="submit">Apply</button>
-    {{if or .FilterAccount .FilterCategory .FilterFrom .FilterTo .FilterQ}}<a class="more" href="/transactions">clear filters</a>{{end}}
-    <a class="more export-btn" href="/transactions/export{{if .ExportQS}}?{{.ExportQS}}{{end}}" title="Export the filtered transactions as CSV">⬇ Export CSV</a>
+    {{if or .FilterAccount .FilterCategory .FilterFrom .FilterTo .FilterQ .FilterP2P}}<a class="more" href="/transactions">clear filters</a>{{end}}
+    <a class="export-btn" href="/transactions/export{{if .ExportQS}}?{{.ExportQS}}{{end}}" title="Exports the currently filtered transactions as CSV">⬇ Export CSV</a>
   </form>
   {{if .Txs}}
   <div class="pager">

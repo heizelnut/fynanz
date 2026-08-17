@@ -500,6 +500,8 @@ func TestTxFilters(t *testing.T) {
 		{EntryReference: "q3", BookingDate: "2026-08-10", AmountMinor: 500, Currency: "EUR", CreditDebit: "CRDT", Counterparty: "ACME", MerchantNormalized: "acme", CategoryID: nil},
 		// Same account, different date (July) for range tests.
 		{EntryReference: "q4", BookingDate: "2026-07-20", AmountMinor: -10, Currency: "EUR", CreditDebit: "DBIT", Counterparty: "Train", MerchantNormalized: "train", CategoryID: nil},
+		// A person-to-person row for the P2P filter.
+		{EntryReference: "q6", BookingDate: "2026-08-04", AmountMinor: 500, Currency: "EUR", CreditDebit: "CRDT", Counterparty: "Mario Rossi", MerchantNormalized: "mario rossi", CategoryID: nil, IsP2P: true},
 	}
 	for i := range txs {
 		if _, _, err := st.InsertTransactions(ctx, uid, ids["f1"], []TransactionInput{txs[i]}); err != nil {
@@ -527,8 +529,8 @@ func TestTxFilters(t *testing.T) {
 		return tx
 	}
 
-	if n := count(TxFilter{}); n != 5 {
-		t.Errorf("all = %d, want 5", n)
+	if n := count(TxFilter{}); n != 6 {
+		t.Errorf("all = %d, want 6", n)
 	}
 	// Account filter.
 	if n := count(TxFilter{AccountID: ids["f2"]}); n != 1 {
@@ -538,12 +540,12 @@ func TestTxFilters(t *testing.T) {
 	if n := count(TxFilter{CategoryID: groceries}); n != 3 {
 		t.Errorf("category = %d, want 3", n)
 	}
-	if n := count(TxFilter{CategoryID: UncategorizedCat}); n != 2 {
-		t.Errorf("uncategorized = %d, want 2", n)
+	if n := count(TxFilter{CategoryID: UncategorizedCat}); n != 3 {
+		t.Errorf("uncategorized = %d, want 3", n)
 	}
 	// Date range.
-	if n := count(TxFilter{DateFrom: "2026-08-01", DateTo: "2026-08-05"}); n != 3 {
-		t.Errorf("aug 1-5 = %d, want 3", n)
+	if n := count(TxFilter{DateFrom: "2026-08-01", DateTo: "2026-08-05"}); n != 4 {
+		t.Errorf("aug 1-5 = %d, want 4", n)
 	}
 	// Free-text on merchant/counterparty; literal % must not act as wildcard.
 	if n := count(TxFilter{Query: "100% Or"}); n != 1 {
@@ -551,6 +553,17 @@ func TestTxFilters(t *testing.T) {
 	}
 	if n := count(TxFilter{Query: "s market"}); n != 2 {
 		t.Errorf("query 's market' = %d, want 2", n)
+	}
+	// P2P filter: only rows flagged person-to-person (and the inverse).
+	if n := count(TxFilter{P2P: P2POnly}); n != 1 {
+		t.Errorf("p2p only = %d, want 1", n)
+	}
+	if n := count(TxFilter{P2P: P2PExcluded}); n != 5 {
+		t.Errorf("p2p excluded = %d, want 5", n)
+	}
+	// Combined: p2p + free-text.
+	if n := count(TxFilter{P2P: P2POnly, Query: "mario"}); n != 1 {
+		t.Errorf("p2p + query = %d, want 1", n)
 	}
 	// Underscore is escaped (plain 'a_c' would match 'acme').
 	if n := count(TxFilter{Query: "a_c"}); n != 0 {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"html/template"
 	"strings"
 	"testing"
 
@@ -25,7 +26,7 @@ func TestInboxTemplates(t *testing.T) {
 		Categories:     cats,
 		UncategorizedN: 3,
 		Pagination:     makePagination(1, 50, 3),
-		PagerBase:      "/inbox?limit=50",
+		PagerBase:      template.URL("/inbox?limit=50"),
 	}
 
 	var buf bytes.Buffer
