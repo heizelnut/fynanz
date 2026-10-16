@@ -5,7 +5,7 @@
 #   cp .env.example .env        # fill ENABLE_BANKING_APP_ID + EB_KEY_HOST_PATH
 #   docker compose up --build
 #
-# Homelab (Traefik + Tailscale): see README → "Homelab deployment".
+# Behind a reverse proxy: see README → "Deployment behind a reverse proxy".
 
 services:
   fynanz:
@@ -34,7 +34,7 @@ services:
       # the container on the service network, no host port needed).
       - "${PORT:-8080}:8080"
 
-    # --- Homelab deployment (uncomment + create the network once):
+    # --- Behind a reverse proxy (uncomment + create the network once):
     #   docker network create proxy
     # networks:
     #   - proxy

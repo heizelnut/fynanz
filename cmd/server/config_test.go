@@ -6,13 +6,13 @@ func TestNormalizePublicBase(t *testing.T) {
 	cases := map[string]string{
 		"":                            "http://localhost:8080",
 		"http://localhost:8080":       "http://localhost:8080",
-		"https://fynanz.lab.heiz.cc":  "https://fynanz.lab.heiz.cc",
-		"fynanz.lab.heiz.cc":          "https://fynanz.lab.heiz.cc",
-		"fynanz.lab.heiz.cc/":         "https://fynanz.lab.heiz.cc",
-		"FYNANZ.LAB.HEIZ.CC":          "https://FYNANZ.LAB.HEIZ.CC",
+		"https://fynanz.example.com":  "https://fynanz.example.com",
+		"fynanz.example.com":          "https://fynanz.example.com",
+		"fynanz.example.com/":         "https://fynanz.example.com",
+		"FYNANZ.EXAMPLE.COM":          "https://FYNANZ.EXAMPLE.COM",
 		"localhost:8080":              "http://localhost:8080",
 		"127.0.0.1:8080":              "http://127.0.0.1:8080",
-		"  fynanz.lab.heiz.cc:8443  ": "https://fynanz.lab.heiz.cc:8443",
+		"  fynanz.example.com:8443  ": "https://fynanz.example.com:8443",
 	}
 	for in, want := range cases {
 		if got := normalizePublicBase(in); got != want {

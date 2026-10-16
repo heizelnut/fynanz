@@ -76,7 +76,7 @@ func loadConfig() Config {
 
 // normalizePublicBase guarantees the public origin has a scheme: ntfy
 // click/actions and the consent redirect need absolute URLs, and a user may
-// set PUBLIC_BASE_URL without one (e.g. "fynanz.lab.heiz.cc"). https:// is
+// set PUBLIC_BASE_URL without one (e.g. "fynanz.example.com"). https:// is
 // assumed; http:// only for localhost-style hosts.
 func normalizePublicBase(raw string) string {
 	raw = strings.TrimSpace(strings.TrimRight(raw, "/"))

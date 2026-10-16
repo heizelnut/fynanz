@@ -1,5 +1,5 @@
 // Privacy policy — served at /privacy (prod-app registration requires a
-// public URL; once the app is reachable behind your Traefik domain, this
+// public URL; once the app is reachable behind your reverse proxy, this
 // page IS the policy). Edit the [placeholders] before going live.
 {{define "content"}}
 <section class="panel">
@@ -11,7 +11,7 @@
   user by <em>[your name]</em>, contact: <em>[your email]</em>. It has no
   operators beyond that person, and no third-party hosting is involved:
   the database lives on the user's own infrastructure (typically a
-  home server behind Tailscale/Traefik).</p>
+  home server behind a private network / reverse proxy).</p>
 
   <h3>2. Data processed</h3>
   <p>To provide the service, the app processes:</p>
@@ -22,7 +22,7 @@
     <li>categories, categorization rules and notification-channel settings
         you create in the app,</li>
     <li>no authentication data — v1 has no login; access to the app is
-        controlled by your network boundary (Tailscale, Traefik).</li>
+        controlled by your network boundary (a private network / reverse proxy).</li>
   </ul>
 
   <h3>3. Purposes and legal basis</h3>

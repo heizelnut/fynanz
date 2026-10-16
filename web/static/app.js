@@ -1,7 +1,7 @@
 // Click-to-copy for elements marked .copyable (mono identifier/text fields:
 // merchant names, IBANs, descriptions, errors). Full-page delegation so
 // HTMX-swapped rows get the behavior automatically. Prefers the async
-// clipboard API (secure contexts incl. localhost/Tailscale-TLS) and falls
+// clipboard API (secure contexts incl. localhost/TLS) and falls
 // back to execCommand for plain-HTTP LAN access.
 (function () {
   "use strict";

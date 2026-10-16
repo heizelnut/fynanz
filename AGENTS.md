@@ -23,8 +23,8 @@ compose up`.
 
 ## 2. Non-goals (for v1)
 
-- No login screen / auth enforcement in v1 — network boundary
-  (Tailscale/Traefik) is the trust boundary. Auth and multi-tenancy are
+- No login screen / auth enforcement in v1 — the network boundary
+  (a VPN or reverse proxy) is the trust boundary. Auth and multi-tenancy are
   planned for v2+ (see §6) but the schema should already be user-scoped
   from v1 to avoid a painful migration later.
 - No budgeting/forecasting features yet — insights first, planning later.
@@ -97,9 +97,9 @@ attention.
   expense over time, per-account balance trend.
 - Notifications: `Notifier` interface, ntfy + webhook backends, wired to
   "needs categorization" and "sync failed / re-auth needed" events.
-- Prometheus-compatible `/metrics` endpoint for Grafana/homelab
+- Prometheus-compatible `/metrics` endpoint for Grafana/Prometheus
   monitoring (see §8).
-- Docker Compose + Traefik/Tailscale deployment.
+- Docker Compose + reverse-proxy deployment.
 
 **Deferred to v2+**
 
@@ -169,8 +169,8 @@ Deferred, but shapes the v1 schema (see §2/§4), so defined now.
 - **Auth modes** (config-selectable, not mutually exclusive at the code
   level):
   1. **None** (v1 default) — trust the network boundary
-     (Tailscale/Traefik), no login screen. Fine for genuine single-user
-     homelab use.
+     (a VPN or reverse proxy), no login screen. Fine for genuine
+     single-user use.
   2. **Built-in basic auth** — username/password, session via signed
      cookie. Superuser bootstrapped from `ADMIN_USER`/`ADMIN_PASSWORD`
      env vars on first boot (ideally forcing a password change on first
@@ -178,7 +178,7 @@ Deferred, but shapes the v1 schema (see §2/§4), so defined now.
      credential). Superuser can create additional users.
   3. **Authelia (forward-auth)** — app trusts `Remote-User`/
      `Remote-Groups` headers set by Authelia sitting in front via
-     Traefik, and skips its own login UI entirely. Just needs to map the
+     a reverse proxy, and skips its own login UI entirely. Just needs to map the
      header value to a local user record.
 - **Multi-tenancy**: each user gets a fully isolated set of linked bank
   accounts, transactions, categories, rules, and notification config. A
@@ -225,7 +225,7 @@ channels can be added later without touching business logic.
 ## 8. Observability: Prometheus metrics
 
 A `/metrics` endpoint in Prometheus exposition format, for scraping into
-an existing Grafana/Prometheus homelab setup — separate from the ntfy/
+an existing Grafana/Prometheus setup — separate from the ntfy/
 webhook notifications in §7, which are event-driven pushes, not a
 scrape target.
 
@@ -237,8 +237,8 @@ scrape target.
     `Uncategorized`.
   - Notifications: sent count/failures per backend (ntfy/webhook).
   - Enable Banking link health: count of expired/needs-reauth links.
-- No auth on `/metrics` in v1 (network boundary via Tailscale/Traefik is
-  the trust boundary, consistent with §2) — revisit once §6 auth modes
+- No auth on `/metrics` in v1 (the network boundary is the trust boundary,
+  consistent with §2) — revisit once §6 auth modes
   land, at which point it should probably stay open to the internal
   network but be excluded from user-facing auth.
 - Multi-tenant note (v2+, see §6): metrics should carry a `user` label
@@ -321,13 +321,11 @@ AGENTS.md
 
 ## 13. Deployment notes
 
-- Runs on Simon's existing homelab, behind **Traefik** (DNS-01 TLS) and
-  reachable over **Tailscale** rather than exposed publicly — add a
-  standard Traefik label set to the compose service and put it on the
-  Tailscale network/internal DNS rather than punching a public port.
-- Given it's SQLite + a single Go binary, this is a one-service compose
-  file (no separate DB container) — a good fit for the "minimal moving
-  parts" homelab pattern already in use elsewhere.
+- Runs behind a **reverse proxy** (DNS-01 TLS) on a private network rather
+  than exposed publicly — add the proxy's label set to the compose service
+  and reach it over the VPN/internal DNS instead of publishing a public port.
+- SQLite + a single Go binary means a one-service compose file (no separate
+  DB container) — minimal moving parts.
 
 ## 14. Milestones
 
@@ -346,5 +344,5 @@ AGENTS.md
 7. Dashboard v1: totals by category/month, simple charts — built
    mobile-first per §10, with layout that expands to use wider viewports
    rather than a separate desktop-only view.
-8. Docker Compose packaging with Traefik labels, `.env.example`, README
-   with setup steps.
+8. Docker Compose packaging with reverse-proxy labels, `.env.example`,
+   README with setup steps.

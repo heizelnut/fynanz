@@ -23,7 +23,7 @@ type Store struct {
 }
 
 // Open opens (creating if needed) the SQLite database at path, with pragmas
-// appropriate for a single-writer homelab app.
+// appropriate for a single-writer app.
 func Open(path string) (*Store, error) {
 	if path != ":memory:" {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

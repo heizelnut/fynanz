@@ -62,23 +62,23 @@ Multi-architecture images (the binary is static, no CGO):
 docker buildx build --platform linux/amd64,linux/arm64 -t fynanz:latest .
 ```
 
-## Homelab deployment (Traefik + Tailscale)
+## Deployment behind a reverse proxy
 
-Per AGENTS.md the app trusts the network boundary — no login in v1. Put it on
-Tailscale and front it with Traefik (DNS-01 TLS).
+The app trusts the network boundary — there is no login in v1. Put it on a
+private network and front it with your own reverse proxy that terminates TLS.
 
 1. Create the shared edge network (once): `docker network create proxy`
 2. In `docker-compose.yml`, uncomment the `proxy` network block and the
-   Traefik label block under the service.
-3. In `.env`: `TRAEFIK_ENABLE=true`, `DOMAIN=fynanz.example.com` (your real
-   hostname), `PUBLIC_BASE_URL=https://fynanz.example.com` (used for
-   notification deep links), and make the app's `ENABLE_BANKING_REDIRECT_URL`
-   an allowed redirect (`https://fynanz.example.com/links/callback` — add it
-   in the Enable Banking control panel too). Remove the `ports:` entry so the
-   service listens only behind Traefik.
+   reverse-proxy label block under the service.
+3. In `.env`: set `TRAEFIK_ENABLE=true` (if using the Traefik labels),
+   `DOMAIN=fynanz.example.com` (your hostname),
+   `PUBLIC_BASE_URL=https://fynanz.example.com` (used for notification deep
+   links), and make the app's `ENABLE_BANKING_REDIRECT_URL` an allowed
+   redirect (`https://fynanz.example.com/links/callback` — add it in the
+   Enable Banking control panel too). Remove the `ports:` entry so the
+   service listens only behind the proxy.
 4. The labels assume a `letsencrypt` certificate resolver set up for DNS-01
-   (`--certificatesresolvers.letsencrypt.dnsChallenge.…` on Traefik) and the
-   `websecure` entrypoint. Adjust if your Traefik differs.
+   and the `websecure` entrypoint. Adjust to match your proxy.
 
 ## Using it day-to-day
 
