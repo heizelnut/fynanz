@@ -49,7 +49,12 @@
 // its stroke-dasharray dashes and marker dots stay constant on screen even
 // though the chart svg is stretched by height:100% + preserveAspectRatio
 // "none". DOM-safe (textContent, no HTML from data).
-(function () {
+//
+// The widget is HTMX-reloaded on its period switch (/dashboard/balance?…),
+// which replaces every element below — the script re-binds on each swap
+// (svg.dataset.crosshair marks an already-bound chart so re-runs are
+// no-ops).
+function initBalanceCrosshair() {
   "use strict";
   var PAD = 10, W = 1200, H = 200;
 
@@ -57,6 +62,8 @@
   var overlay = document.querySelector("svg.cursor");
   var dataEl = document.getElementById("balance-data");
   if (!svg || !overlay || !dataEl) return;
+  if (svg.dataset.crosshair) return; // already bound
+  svg.dataset.crosshair = "1";
 
   var data;
   try { data = JSON.parse(dataEl.textContent); } catch (e) { return; }
@@ -196,6 +203,57 @@
     show(Math.min(1, Math.max(0, x / rect.width)), e.clientX - wrap.getBoundingClientRect().left, e.clientY - wrap.getBoundingClientRect().top);
   });
   svg.addEventListener("mouseleave", hide);
+}
+initBalanceCrosshair();
+document.addEventListener("htmx:afterSwap", initBalanceCrosshair);
+
+// Floating tooltip for dashboard widget segments (donut sectors, month
+// bars). Content comes from a server-rendered data-tip attribute; the tip
+// element lives inside the widget container (matched via closest) so its
+// position is computed against that box. Delegated on the document, so
+// segments swapped in later by HTMX get the behavior automatically.
+(function () {
+  "use strict";
+  var SELECTOR = ".donut-seg, a.vbar-col";
+
+  function hostFor(seg) {
+    return seg.closest(".flow-widget") || seg.closest(".balance-wrap");
+  }
+
+  function place(tip, host, e) {
+    var rect = host.getBoundingClientRect();
+    var w = tip.offsetWidth || 120;
+    var h = tip.offsetHeight || 36;
+    var left = e.clientX - rect.left + 12;
+    var top = e.clientY - rect.top + 14;
+    if (left + w > rect.width - 4) left = rect.width - w - 4;
+    if (left < 4) left = 4;
+    if (top + h > rect.height - 4) top = rect.height - h - 4;
+    if (top < 4) top = 4;
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+  }
+
+  function tipFor(seg) {
+    var host = hostFor(seg);
+    return host ? host.querySelector(".chart-tip") : null;
+  }
+
+  document.addEventListener("pointermove", function (e) {
+    var seg = e.target.closest(SELECTOR);
+    var tip = (seg && seg.dataset && seg.dataset.tip) ? tipFor(seg) : null;
+    if (!tip) return;
+    tip.textContent = seg.dataset.tip;
+    tip.removeAttribute("hidden");
+    place(tip, hostFor(seg), e);
+  });
+  // Hide when the pointer leaves every segment: relatedTarget null (out of
+  // the document, e.g. off-window) or outside the widget.
+  document.addEventListener("pointerout", function (e) {
+    if (e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest(SELECTOR)) return;
+    var tip = e.target.closest ? tipFor(e.target) : null;
+    if (tip) tip.setAttribute("hidden", "");
+  });
 })();
 
 // Flash alerts (server-rendered from ?msg=/?err=): dismiss on × click or

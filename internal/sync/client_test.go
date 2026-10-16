@@ -31,6 +31,8 @@ type fakeEB struct {
 	sessionErr  *APIError     // when set, GET /sessions/{id} fails with it
 	txnCalls    int           // transaction fetches so far
 	txnsAfter   []Transaction // served instead of paging after the first fetch
+	txnFroms    []string      // date_from values requested, in order
+	minTxFrom   string        // when set, earlier date_from → 422 WRONG_TRANSACTIONS_PERIOD
 	aspsps      []ASPSPData   // served for GET /aspsps
 	lastAuthReq StartAuthorizationRequest
 	expectKID   string    // jwt kid the fake accepts (default test-app)
@@ -133,7 +135,19 @@ func (f *fakeEB) handler() http.Handler {
 			f.mu.Lock()
 			f.txnCalls++
 			first, after := f.txnCalls == 1, f.txnsAfter
+			from := r.URL.Query().Get("date_from")
+			f.txnFroms = append(f.txnFroms, from)
+			minFrom := f.minTxFrom
 			f.mu.Unlock()
+			if minFrom != "" && from != "" && from < minFrom {
+				// Simulate an ASPSP that caps historical depth (PSD2).
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				_ = json.NewEncoder(w).Encode(ErrorResponse{
+					Message: "Wrong transactions period", Code: 422,
+					Error: "WRONG_TRANSACTIONS_PERIOD", Detail: "window too old",
+				})
+				return
+			}
 			switch {
 			case !first && after != nil:
 				writeJSON(w, TransactionsResponse{Transactions: after})

@@ -84,6 +84,15 @@ Tailscale and front it with Traefik (DNS-01 TLS).
 
 - **Sync**: automatic on an interval (default 24h, `SYNC_INTERVAL`), at
   startup, or manually — *Sync now* per link / *Sync all*.
+- **History depth**: every sync fetches a rolling `SYNC_HISTORY_DAYS` window
+  (default 365). If the dashboard shows no data for the earlier months of a
+  12M/1y view (e.g. only the last few months exist), the install simply
+  started recently or synced with a shorter window — raise
+  `SYNC_HISTORY_DAYS` in `.env`, restart, and hit *Sync all*: the re-sync
+  pulls deeper history and merges without duplicates (transactions dedupe on
+  entry_reference). How far back a bank actually serves its history varies
+  under PSD2 — many ASPSPs cap it at ~90 days, so a year of Vint data may
+  simply not be available from the bank itself.
 - **Inbox**: every unrecognized transaction waits here; picking a category
   writes an exact-merchant rule. Pending items also drive the
   `needs_category` push notification.
@@ -119,8 +128,9 @@ Tailscale and front it with Traefik (DNS-01 TLS).
 
 - File: `/data/fynanz.db` in the container (the `fynanz-data` volume).
 - Backup: `docker exec fynanz sqlite3 /data/fynanz.db ".backup '/data/backup.db'"` + copy the file, or stop the service and copy the volume. Restore: stop, replace the file, start (migrations are idempotent).
-- First sync pulls ~90 days back (`SYNC_HISTORY_DAYS`); the balance trend is
-  derived from transactions since we don't snapshot balances yet.
+- First sync pulls a year back by default (`SYNC_HISTORY_DAYS` — the window
+  is rolling, so re-syncing with a larger value backfills); the balance trend
+  is derived from transactions since we don't snapshot balances yet.
 
 ## Troubleshooting
 

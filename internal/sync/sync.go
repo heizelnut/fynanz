@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -263,6 +264,48 @@ type Result struct {
 	MarkedReauthNeeded   bool
 }
 
+// transactionsWindowLadder is the fallback ladder when an ASPSP rejects the
+// requested history window: each rung is a shorter window anchored at now.
+// Longest first; entries are only tried when strictly shorter than the
+// rejected request (a longer retry would be pointless).
+var transactionsWindowLadder = []int{180, 120, 90, 60, 30}
+
+// transactionsWithWindow fetches transactions from requestedFrom. Banks cap
+// historical transaction depth under PSD2 (many at ~90 days) and signal the
+// cap with WRONG_TRANSACTIONS_PERIOD, so a year-long backfill request is
+// accepted by some banks and rejected by others. On rejection the request is
+// retried down the ladder; the effectively-used window is returned so
+// callers can log the cap. Any other error propagates unchanged.
+func (s *Service) transactionsWithWindow(ctx context.Context, uid, requestedFrom string) ([]Transaction, string, error) {
+	raw, err := s.client.GetTransactions(ctx, uid, requestedFrom, "")
+	if err == nil {
+		return raw, requestedFrom, nil
+	}
+	if !IsWrongTransactionsPeriod(err) {
+		return nil, requestedFrom, err
+	}
+	start, perr := time.Parse("2006-01-02", requestedFrom)
+	if perr != nil {
+		return nil, requestedFrom, err
+	}
+	now := time.Now().UTC()
+	reqDays := int(now.Sub(start).Hours() / 24)
+	for _, days := range transactionsWindowLadder {
+		if days >= reqDays {
+			continue // never retry with a window longer than the rejected one
+		}
+		from := now.AddDate(0, 0, -days).Format("2006-01-02")
+		raw, err = s.client.GetTransactions(ctx, uid, from, "")
+		if err == nil {
+			return raw, from, nil
+		}
+		if !IsWrongTransactionsPeriod(err) {
+			return nil, from, err
+		}
+	}
+	return nil, requestedFrom, fmt.Errorf("bank rejects all transaction history windows: %w", err)
+}
+
 // SyncLink pulls accounts, balances and transactions for one active link.
 func (s *Service) SyncLink(ctx context.Context, linkID int64) (res Result, err error) {
 	var userID int64 // declared before the defer, which records outcomes
@@ -395,13 +438,16 @@ func (s *Service) SyncLink(ctx context.Context, linkID int64) (res Result, err e
 			return res, fmt.Errorf("sync: missing account id for %s", sa.UID)
 		}
 
-		rawTxns, err := s.client.GetTransactions(ctx, sa.UID, dateFrom, "")
+		rawTxns, fetchedFrom, err := s.transactionsWithWindow(ctx, sa.UID, dateFrom)
 		if err != nil {
 			if IsSessionError(err) {
 				s.markReauth(ctx, link.ID, err)
 				res.MarkedReauthNeeded = true
 			}
 			return res, fmt.Errorf("sync: transactions %s: %w", sa.UID, err)
+		}
+		if fetchedFrom != dateFrom {
+			log.Printf("sync %s: bank caps transaction history — window reduced from %s to %s", link.Bank, dateFrom, fetchedFrom)
 		}
 		res.Accounts++
 

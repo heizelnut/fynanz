@@ -22,6 +22,13 @@ func newTestService(t *testing.T, f *fakeEB) (*Service, *store.Store) {
 
 func newTestServiceN(t *testing.T, f *fakeEB, n notify.Notifier) (*Service, *store.Store) {
 	t.Helper()
+	return newTestServiceH(t, f, n, 90)
+}
+
+// newTestServiceH is newTestServiceN with an explicit SYNC_HISTORY_DAYS
+// equivalent (the window the sync requests on every run).
+func newTestServiceH(t *testing.T, f *fakeEB, n notify.Notifier, historyDays int) (*Service, *store.Store) {
+	t.Helper()
 	if n == nil {
 		n = notify.Nop{}
 	}
@@ -36,7 +43,7 @@ func newTestServiceN(t *testing.T, f *fakeEB, n notify.Notifier) (*Service, *sto
 
 	c := testClient(t, f)
 	svc := NewService(st, c, metrics.Recorder{}, n, "http://localhost:8080",
-		"http://localhost:8080/links/callback", "personal", 90, 30)
+		"http://localhost:8080/links/callback", "personal", historyDays, 30)
 	return svc, st
 }
 
@@ -623,5 +630,55 @@ func TestRateLimitIsSilent(t *testing.T) {
 	// Link auth state is intact: the sync itself merely failed transiently.
 	if got.SessionID == "" {
 		t.Error("session lost during 429")
+	}
+}
+
+// TestTransactionsWindowFallback: when the bank rejects a deep history window
+// (WRONG_TRANSACTIONS_PERIOD — e.g. Mediolanum capping PSD2 depth at ~90
+// days), SyncLink retries with shorter windows and succeeds with the largest
+// one the bank accepts, instead of failing the whole sync.
+func TestTransactionsWindowFallback(t *testing.T) {
+	f := fixtureEB()
+	minFrom := time.Now().UTC().AddDate(0, 0, -90).Format("2006-01-02")
+	f.minTxFrom = minFrom
+	// A year-long window (the new default) gets rejected outright…
+	svc, st := newTestServiceH(t, f, nil, 365)
+	ctx := context.Background()
+	link, _, err := svc.StartLink(ctx, "sandbox")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.CompleteLink(ctx, link.State, "code-123"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := svc.SyncLink(ctx, link.ID)
+	if err != nil {
+		t.Fatalf("sync failed on capped bank: %v", err)
+	}
+	// CompleteLink already synced once (its window also fell back and
+	// inserted the fixture rows); the explicit SyncLink re-fetches the same
+	// window and dedupes. Total stored = the fixture's 2 rows regardless.
+	total, err := st.CountTransactions(ctx, link.UserID, store.TxFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 2 {
+		t.Errorf("stored transactions = %d, want 2", total)
+	}
+	if res.TransactionsInserted != 0 || res.TransactionsSkipped != 2 {
+		t.Errorf("re-sync = %d inserted / %d skipped, want 0/2", res.TransactionsInserted, res.TransactionsSkipped)
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.txnFroms) < 2 {
+		t.Fatalf("expected ≥2 transaction fetches (rejected + fallback), got %d: %v", len(f.txnFroms), f.txnFroms)
+	}
+	if f.txnFroms[0] >= minFrom {
+		t.Errorf("first attempt should have asked for a window older than the cap: %s vs %s", f.txnFroms[0], minFrom)
+	}
+	last := f.txnFroms[len(f.txnFroms)-1]
+	if last < minFrom {
+		t.Errorf("no fallback window was accepted: last = %s, cap = %s", last, minFrom)
 	}
 }

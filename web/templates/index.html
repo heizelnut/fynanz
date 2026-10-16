@@ -66,64 +66,8 @@
     {{end}}
   </div>
 
-  <div class="panel g-half">
-    <h2>Income vs expenses <span class="muted">6 months</span></h2>
-    {{if not .Dashboard.HasFlows}}
-    <p class="muted">No income or expenses recorded in {{.Dashboard.Currency}} over the last 6 months.
-    Transactions with an empty booking date (some Revolut data) were backfilled from the value date —
-    re-run a sync if this looks stale.</p>
-    {{else}}
-    <div class="vbars">
-      {{range .Dashboard.Flows}}
-      <div class="vbar-col" title="{{.Month}}: income {{fmtAmount .IncomeMinor $.Dashboard.Currency}}, expense {{fmtAmount .ExpenseMinor $.Dashboard.Currency}}">
-        <div class="vbar-bars">
-          <span class="vbar-in" style="height:{{.IncomePct}}%"></span>
-          <span class="vbar-out" style="height:{{.ExpensePct}}%"></span>
-        </div>
-        <span class="vbar-label mono">{{.Label}}</span>
-      </div>
-      {{end}}
-    </div>
-    <div class="legend muted"><span class="sw in"></span> income <span class="sw out"></span> expense</div>
-    {{end}}
-  </div>
-
-  <div class="panel g-wide">
-    <h2>Balance trend <span class="muted">derived from daily transactions</span></h2>
-    {{if .Dashboard.Balance.Series}}
-    <script type="application/json" id="balance-data">{{jsJSON .Dashboard.BalanceJSON}}</script>
-    <div class="balance-wrap">
-      <svg class="balance" viewBox="0 0 1200 200" preserveAspectRatio="none" role="img" aria-label="balance trend">
-        {{range .Dashboard.Balance.Series}}
-        <polyline class="bal {{.Class}}" points="{{.Points}}" vector-effect="non-scaling-stroke"></polyline>
-        {{end}}
-      </svg>
-      <svg class="cursor" hidden aria-hidden="true">
-        <defs>
-          {{range .Dashboard.Balance.Series}}
-          <marker id="cd-{{.Class}}" viewBox="-5 -5 10 10" refX="0" refY="0" markerWidth="12" markerHeight="12">
-            <circle class="cdot {{.Class}}" cx="0" cy="0" r="4.5"></circle>
-          </marker>
-          {{end}}
-        </defs>
-        <line class="cur-v"></line>
-        <line class="cur-h"></line>
-        {{range .Dashboard.Balance.Series}}<polyline class="cur-dots" marker-end="url(#cd-{{.Class}})"></polyline>{{end}}
-      </svg>
-      <div class="cursor-label" hidden></div>
-    </div>
-    <div class="legend muted">
-      {{range .Dashboard.Balance.Series}}
-      <span class="lg-item"><span class="sw {{.Class}}"></span> {{.Label}}</span>
-      {{end}}
-      <span class="lg-break"></span>
-      <span class="lg-item">{{fmtAmount .Dashboard.Balance.Min .Dashboard.Currency}} ↔ {{fmtAmount .Dashboard.Balance.Max .Dashboard.Currency}}</span>
-      <span class="lg-item lg-right">since {{.Dashboard.Since}}</span>
-    </div>
-    {{else}}
-    <p class="muted">No balance history to show yet (accounts gain balances after a sync).</p>
-    {{end}}
-  </div>
+  {{template "flows_panel" .}}
+  {{template "balance_panel" .}}
 </section>
 {{else}}
 <section class="panel">

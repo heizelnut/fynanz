@@ -40,6 +40,7 @@ func (h *handlers) loadTemplates() error {
 	}
 	funcs := template.FuncMap{
 		"fmtAmount":     fmtAmount,
+		"fmtPlain":      fmtPlain,
 		"fmtDate":       fmtDate,
 		"accountName":   h.accountName,
 		"eventsSummary": eventsSummary,
@@ -119,6 +120,25 @@ func fmtAmount(minor any, currency string) string {
 		return ""
 	}
 	return sync.FormatMinor(v, currency) + " " + currency
+}
+
+// fmtPlain renders minor units as a plain signed decimal ("-12.34") without
+// the currency suffix — the donut center and legend sums, where scale is
+// constant and the suffix would overflow the hole.
+func fmtPlain(minor any, currency string) string {
+	var v int64
+	switch n := minor.(type) {
+	case int64:
+		v = n
+	case *int64:
+		if n == nil {
+			return ""
+		}
+		v = *n
+	default:
+		return ""
+	}
+	return sync.FormatMinor(v, currency)
 }
 
 // fmtDate shortens an RFC3339 timestamp ("2026-09-13T11:48:42Z") to its date

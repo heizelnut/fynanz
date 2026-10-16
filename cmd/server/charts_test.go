@@ -102,6 +102,54 @@ func TestFillMonthFlows(t *testing.T) {
 	}
 }
 
+func TestFillMonthFlowsLinks(t *testing.T) {
+	// Every padded row links to its own calendar month on /transactions.
+	now := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+	out := fillMonthFlows([]store.MonthFlow{{Month: "2026-08", IncomeMinor: 1}}, 3, now)
+	june := out[0] // June 2026
+	if june.FromDate != "2026-06-01" || june.ToDate != "2026-06-30" {
+		t.Errorf("june range = %s..%s", june.FromDate, june.ToDate)
+	}
+	if want := "/transactions?date_from=2026-06-01&date_to=2026-06-30"; string(june.TxURL) != want {
+		t.Errorf("june url = %q, want %q", june.TxURL, want)
+	}
+	// Not all months have 30 days: August ends on the 31st.
+	aug := out[2]
+	if aug.FromDate != "2026-08-01" || aug.ToDate != "2026-08-31" {
+		t.Errorf("august range = %s..%s", aug.FromDate, aug.ToDate)
+	}
+}
+
+func TestComputeFlowDonut(t *testing.T) {
+	rows := []monthFlowRow{
+		{IncomeMinor: 800, ExpenseMinor: 400},
+		{IncomeMinor: 200, ExpenseMinor: 0},
+	}
+	d := computeFlowDonut(rows)
+	if !d.HasData || d.IncomeMinor != 1000 || d.ExpenseMinor != 400 {
+		t.Errorf("totals wrong: %+v", d)
+	}
+	if d.NetMinor != 600 || d.TotalMinor != 1400 {
+		t.Errorf("net/total wrong: %+v", d)
+	}
+	// Income is 1000/1400 ≈ 71.4% → integer 71; expense takes the remainder
+	// so the arcs always tile exactly (no rounding gap): 71 + 29 = 100.
+	if d.IncomePct != 71 || d.ExpensePct != 29 {
+		t.Errorf("pcts = %d/%d, want 71/29", d.IncomePct, d.ExpensePct)
+	}
+
+	// Zero movement → no arcs at all.
+	if d := computeFlowDonut(nil); d.HasData || d.TotalMinor != 0 {
+		t.Errorf("empty donut should be inert: %+v", d)
+	}
+
+	// Expense-only window: the income arc disappears, expense fills the ring.
+	d = computeFlowDonut([]monthFlowRow{{ExpenseMinor: 50}})
+	if !d.HasData || d.IncomePct != 0 || d.ExpensePct != 100 || d.NetMinor != -50 {
+		t.Errorf("expense-only donut wrong: %+v", d)
+	}
+}
+
 func TestFillCatSpend(t *testing.T) {
 	rows := []store.CategorySpend{
 		{Name: "Groceries", TotalMinor: 1000},

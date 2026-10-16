@@ -74,6 +74,8 @@ func newServer(st *store.Store, svc *sync.Service, cfg Config) http.Handler {
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
+	r.Get("/dashboard/flows", h.flowsPanel)
+	r.Get("/dashboard/balance", h.balancePanel)
 	r.Handle("/metrics", metrics.Handler())
 	r.Handle("/static/*", noCache(http.StripPrefix("/static/", http.FileServer(http.FS(webStatic)))))
 	return r
@@ -110,15 +112,20 @@ type pageData struct {
 }
 
 // dashboardData is everything the insights panels need (milestone 7); empty
-// HasData=false renders the "sync to see insights" hint.
+// HasData=false renders the "sync to see insights" hint. FlowMonths and
+// BalanceDays echo the active widget period so the selector buttons re-mark
+// themselves after an HTMX swap.
 type dashboardData struct {
 	HasData     bool
 	Currency    string
 	Since       string // balance series starts here (derived, not bank-reported)
 	CatSpend    []catSpendRow
 	Flows       []monthFlowRow
+	FlowDonut   flowDonut
+	FlowMonths  int // active income/expense window (months)
 	Balance     balanceChart
 	BalanceJSON string // crosshair data (see balChartJSON)
+	BalanceDays int    // active balance window (days; 0 = all time)
 	HasFlows    bool   // any income/expense in the window (else show hint)
 }
 
@@ -230,9 +237,10 @@ func (h *handlers) index(w http.ResponseWriter, r *http.Request) {
 }
 
 // dashboard assembles the insights panels (AGENTS.md §14 milestone 7): spend
-// by category this month, 6 months of income vs expense, and a derived
-// balance trend per account with balance data. v1 shows the primary currency
-// only (no FX, §4).
+// by category this month, 6 months of income vs expense (donut + bars), and a
+// derived balance trend per account with balance data. v1 shows the primary
+// currency only (no FX, §4). The interactive widgets call flowsData/
+// balanceData with their own period and re-render just their panel.
 func (h *handlers) dashboard(ctx context.Context) (dashboardData, error) {
 	var d dashboardData
 	cur, err := h.store.PrimaryCurrency(ctx, defaultUserID)
@@ -244,39 +252,70 @@ func (h *handlers) dashboard(ctx context.Context) (dashboardData, error) {
 	}
 	now := time.Now().UTC()
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
-	historyFrom := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -5, 0)
 
 	cats, err := h.store.SpendByCategory(ctx, defaultUserID, cur, monthStart)
 	if err != nil {
 		return d, err
 	}
-	flows, err := h.store.IncomeExpenseByMonth(ctx, defaultUserID, cur, historyFrom.Format("2006-01-02"))
+	flowRows, donut, hasFlows, err := h.flowsData(ctx, cur, 6, now)
 	if err != nil {
 		return d, err
 	}
-	flowRows := fillMonthFlows(flows, 6, now)
+	bal, balJSON, since, err := h.balanceData(ctx, cur, 90, now)
+	if err != nil {
+		return d, err
+	}
+	d = dashboardData{
+		HasData:     true,
+		Currency:    cur,
+		CatSpend:    fillCatSpend(cats),
+		Flows:       flowRows,
+		FlowDonut:   donut,
+		FlowMonths:  6,
+		HasFlows:    hasFlows,
+		Balance:     bal,
+		BalanceJSON: balJSON,
+		BalanceDays: 90,
+		Since:       since,
+	}
+	return d, nil
+}
+
+// flowsData builds the income-vs-expense widget for `months` months ending
+// this month: padded rows, donut arcs, and whether any money moved.
+func (h *handlers) flowsData(ctx context.Context, cur string, months int, now time.Time) ([]monthFlowRow, flowDonut, bool, error) {
+	historyFrom := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -(months - 1), 0)
+	flows, err := h.store.IncomeExpenseByMonth(ctx, defaultUserID, cur, historyFrom.Format("2006-01-02"))
+	if err != nil {
+		return nil, flowDonut{}, false, err
+	}
+	rows := fillMonthFlows(flows, months, now)
 	hasFlows := false
-	for _, f := range flowRows {
+	for _, f := range rows {
 		if f.IncomeMinor > 0 || f.ExpenseMinor > 0 {
 			hasFlows = true
 			break
 		}
 	}
-	d = dashboardData{
-		HasData:  true,
-		Currency: cur,
-		CatSpend: fillCatSpend(cats),
-		Flows:    flowRows,
-		HasFlows: hasFlows,
-	}
+	return rows, computeFlowDonut(rows), hasFlows, nil
+}
 
-	// Balance trend: derived per account (see deriveBalanceSeries).
+// balanceData derives the per-account balance series over the last `days`
+// (0 = all time) for one currency: the SVG description, the crosshair JSON,
+// and the "since" legend label.
+func (h *handlers) balanceData(ctx context.Context, cur string, days int, now time.Time) (balanceChart, string, string, error) {
+	since := now.AddDate(0, 0, -days).Format("2006-01-02")
+	if days == 0 {
+		since = "all time"
+	}
 	accounts, err := h.store.ListAccounts(ctx, defaultUserID)
 	if err != nil {
-		return d, err
+		return balanceChart{}, "", since, err
 	}
-	since := now.AddDate(0, 0, -90).Format("2006-01-02")
-	d.Since = since
+	dateFrom := ""
+	if days > 0 {
+		dateFrom = since
+	}
 	type rawSeries struct {
 		label string
 		pts   []balancePoint
@@ -287,53 +326,108 @@ func (h *handlers) dashboard(ctx context.Context) (dashboardData, error) {
 		if a.BalanceMinor == nil {
 			continue
 		}
-		days, err := h.store.DailyAmountSums(ctx, defaultUserID, a.ID, since)
+		days2, err := h.store.DailyAmountSums(ctx, defaultUserID, a.ID, dateFrom)
 		if err != nil {
-			return d, err
+			return balanceChart{}, "", since, err
 		}
-		pts := deriveBalanceSeries(*a.BalanceMinor, days, 60)
+		pts := deriveBalanceSeries(*a.BalanceMinor, days2, 60)
 		if len(pts) == 0 {
 			continue
 		}
 		raw = append(raw, rawSeries{label: a.DisplayName(), pts: pts})
 		allPts = append(allPts, pts...)
 	}
-	if len(raw) > 0 {
-		min, maxV := allPts[0].Minor, allPts[0].Minor
-		for _, p := range allPts[1:] {
-			if p.Minor < min {
-				min = p.Minor
-			}
-			if p.Minor > maxV {
-				maxV = p.Minor
-			}
-		}
-		series := make([]lineSeries, 0, len(raw))
-		js := balChartJSON{Currency: cur, Min: min, Max: maxV, Series: make([]balSeriesJSON, 0, len(raw))}
-		for i, rs := range raw {
-			coords := make([]svgPoint, len(rs.pts))
-			for j, p := range rs.pts {
-				coords[j] = svgCoord(j, len(rs.pts), p.Minor, min, maxV)
-			}
-			series = append(series, lineSeries{
-				Label:  rs.label,
-				Points: polylineAttr(coords),
-				Class:  fmt.Sprintf("bal-%d", i),
-			})
-			pts := make([]balPointJSON, 0, len(rs.pts))
-			for _, p := range rs.pts {
-				pts = append(pts, balPointJSON(p))
-			}
-			js.Series = append(js.Series, balSeriesJSON{Label: rs.label, Points: pts})
-		}
-		if rawJSON, err := json.Marshal(js); err == nil {
-			// json.Marshal does not escape "</script>"; bank-supplied strings
-			// must not be able to break out of the script block.
-			d.BalanceJSON = strings.ReplaceAll(string(rawJSON), "</", "<\\/")
-		}
-		d.Balance = buildBalanceChart(series, min, maxV, nil)
+	if len(raw) == 0 {
+		return balanceChart{}, "", since, nil
 	}
-	return d, nil
+	min, maxV := allPts[0].Minor, allPts[0].Minor
+	for _, p := range allPts[1:] {
+		if p.Minor < min {
+			min = p.Minor
+		}
+		if p.Minor > maxV {
+			maxV = p.Minor
+		}
+	}
+	series := make([]lineSeries, 0, len(raw))
+	js := balChartJSON{Currency: cur, Min: min, Max: maxV, Series: make([]balSeriesJSON, 0, len(raw))}
+	for i, rs := range raw {
+		coords := make([]svgPoint, len(rs.pts))
+		for j, p := range rs.pts {
+			coords[j] = svgCoord(j, len(rs.pts), p.Minor, min, maxV)
+		}
+		series = append(series, lineSeries{
+			Label:  rs.label,
+			Points: polylineAttr(coords),
+			Class:  fmt.Sprintf("bal-%d", i),
+		})
+		pts := make([]balPointJSON, 0, len(rs.pts))
+		for _, p := range rs.pts {
+			pts = append(pts, balPointJSON(p))
+		}
+		js.Series = append(js.Series, balSeriesJSON{Label: rs.label, Points: pts})
+	}
+	balJSON := ""
+	if rawJSON, err := json.Marshal(js); err == nil {
+		// json.Marshal does not escape "</script>"; bank-supplied strings
+		// must not be able to break out of the script block.
+		balJSON = strings.ReplaceAll(string(rawJSON), "</", "<\\/")
+	}
+	return buildBalanceChart(series, min, maxV, nil), balJSON, since, nil
+}
+
+// flowsPanel is the income-vs-expense widget as an HTMX-servable panel
+// (period switch): months ∈ {3,6,12}, everything else falls back to 6.
+func (h *handlers) flowsPanel(w http.ResponseWriter, r *http.Request) {
+	months := 6
+	if v := r.URL.Query().Get("months"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && (n == 3 || n == 6 || n == 12) {
+			months = n
+		}
+	}
+	ctx := r.Context()
+	cur, err := h.store.PrimaryCurrency(ctx, defaultUserID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	var d dashboardData
+	if cur != "" {
+		rows, donut, has, err := h.flowsData(ctx, cur, months, time.Now().UTC())
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		d = dashboardData{HasData: true, Currency: cur, Flows: rows, FlowDonut: donut, FlowMonths: months, HasFlows: has}
+	}
+	h.renderPartial(w, "index.html", "flows_panel", struct{ Dashboard dashboardData }{Dashboard: d})
+}
+
+// balancePanel is the balance-trend widget as an HTMX-servable panel (period
+// switch): days ∈ {30,90,180,365,0(=all)}, anything else falls back to 90.
+func (h *handlers) balancePanel(w http.ResponseWriter, r *http.Request) {
+	days := 90
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && (n == 30 || n == 90 || n == 180 || n == 365 || n == 0) {
+			days = n
+		}
+	}
+	ctx := r.Context()
+	cur, err := h.store.PrimaryCurrency(ctx, defaultUserID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	var d dashboardData
+	if cur != "" {
+		bal, balJSON, since, err := h.balanceData(ctx, cur, days, time.Now().UTC())
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		d = dashboardData{HasData: true, Currency: cur, Balance: bal, BalanceJSON: balJSON, BalanceDays: days, Since: since}
+	}
+	h.renderPartial(w, "index.html", "balance_panel", struct{ Dashboard dashboardData }{Dashboard: d})
 }
 
 func (h *handlers) transactions(w http.ResponseWriter, r *http.Request) {

@@ -209,8 +209,9 @@ td.wrap {
    row = one component"), and explicit span classes widen panels as the
    viewport grows:
      < 48em   : all panels stacked, one per row
-     48-79.9em: Spend + Income half-width, Balance next row (full width)
-     >= 80em  : Spend(3) Income(3) Balance(6) — all in one row
+     48-79.9em: Spend + Flows half-width, Balance next row (full width)
+     >= 80em  : Spend(3) Flows(9) — donut+bars get the row; Balance full
+                width on the next row (room for several account series)
    Spans are always expressed within the 12 explicit tracks, so a bare
    `span N` can never create implicit columns (an earlier single-track grid
    + `span 2` dragged the second panel side by side). Panels stretch to the
@@ -235,11 +236,12 @@ td.wrap {
 .dash-grid .balance-wrap { flex: 1; min-height: 0; } /* basis 0: the wrap takes exactly the panel's leftover height (height:100% above is the non-flex fallback and is inert here) */
 
 @media (min-width: 48em) {          /* 768px+ */
-  .dash-grid > .panel.g-half { grid-column: span 6; }
+  .dash-grid > .panel.g-half, .dash-grid > .panel.g-threeq { grid-column: span 6; }
 }
 @media (min-width: 80em) {          /* 1280px+ */
   .dash-grid > .panel.g-half { grid-column: span 3; }
-  .dash-grid > .panel.g-wide { grid-column: span 6; }
+  .dash-grid > .panel.g-threeq { grid-column: span 9; }
+  .dash-grid > .panel.g-full { grid-column: 1 / -1; }
 }
 
 .hbars { display: flex; flex-direction: column; gap: .4rem; }
@@ -272,6 +274,10 @@ td.wrap {
   gap: .25rem;
   min-width: 0;
 }
+/* Month bars are also links to that month's transactions: strip the link
+   chrome, keep the interactive affordance on hover (bars brighten). */
+a.vbar-col { color: inherit; text-decoration: none; }
+a.vbar-col:hover .vbar-in, a.vbar-col:hover .vbar-out, a.vbar-col:focus-visible .vbar-in, a.vbar-col:focus-visible .vbar-out { filter: brightness(1.14); }
 .vbar-bars {
   display: flex;
   align-items: flex-end;
@@ -298,6 +304,79 @@ td.wrap {
 .sw { display: inline-block; width: .8em; height: .8em; border-radius: 3px; }
 .sw.in { background: var(--ok); }
 .sw.out { background: var(--err); }
+.sw.net.pos { background: var(--ok); }
+.sw.net.neg { background: var(--err); }
+
+/* Income-vs-expense widget: donut (color-coded sectors per §4) + month bars
+   side by side. The donut circle is a fixed visual anchor; the bars stretch
+   to fill whatever width the panel gives them. */
+.flow-widget {
+  display: flex;
+  align-items: center;
+  gap: .4rem 1.2rem;
+  flex: 1;
+  min-height: 11rem;
+  position: relative; /* anchor for .chart-tip */
+}
+.flow-widget .donut-wrap { flex: 0 0 auto; }
+.flow-widget .vbars { flex: 1 1 auto; min-height: 11rem; }
+.donut { width: 9.5rem; height: 9.5rem; display: block; }
+.donut-bg { fill: none; stroke: var(--badge-neutral-bg); stroke-width: 18; }
+.donut-seg { fill: none; stroke-width: 18; cursor: default; }
+.donut-seg.inc { stroke: var(--ok); }
+.donut-seg.exp { stroke: var(--err); }
+.donut-seg:hover { filter: brightness(1.15); }
+.donut-net-label { font-size: 10px; fill: var(--muted); }
+.donut-net {
+  font-size: 15px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.donut-net.pos { fill: var(--ok); }
+.donut-net.neg { fill: var(--err); }
+@media (max-width: 720px) { .donut { width: 8rem; height: 8rem; } }
+
+/* Segmented period switch (the widget's control row, right side of h2). */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  align-self: flex-start;
+}
+.seg-btn {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: .12rem .55rem;
+  font-size: .78rem;
+  border-right: 1px solid var(--line);
+  cursor: pointer;
+}
+.seg-btn:last-child { border-right: 0; }
+.seg-btn:hover { color: var(--fg); background: var(--hover-bg); }
+.seg-btn.on { background: var(--accent); color: #fff; }
+.seg-btn[disabled] { opacity: .45; cursor: default; }
+
+/* Floating tooltip for widget segments (donut sectors, month bars); content
+   comes from data-tip, positioned by JS relative to the widget container. */
+.chart-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  background: var(--tooltip-bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .3rem .55rem;
+  font-size: .78rem;
+  line-height: 1.35;
+  z-index: 6;
+  max-width: 22rem;
+  overflow-wrap: anywhere;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+.chart-tip[hidden] { display: none; }
 
 /* The vbar bars use percentage heights against .vbar-bars' flexed height.
    .vbars must stretch .vbar-col (no align-items:flex-end) or the track

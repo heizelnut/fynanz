@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"html/template"
+	"net/url"
 	"strings"
 	"time"
 
@@ -123,7 +125,8 @@ func polylineAttr(coords []svgPoint) string {
 	return strings.TrimSpace(b.String())
 }
 
-// monthFlowRow is the template-facing month bar.
+// monthFlowRow is the template-facing month bar. From/ToDate and TxURL let
+// the bar itself be a link to that month's transactions (date-filtered).
 type monthFlowRow struct {
 	Label        string // "Aug"
 	Month        string // "2026-08"
@@ -131,6 +134,9 @@ type monthFlowRow struct {
 	ExpenseMinor int64
 	IncomePct    int
 	ExpensePct   int
+	FromDate     string       // first day of the month ("2026-08-01")
+	ToDate       string       // last day of the month
+	TxURL        template.URL // /transactions?date_from=…&date_to=…
 }
 
 // fillMonthFlows pads the aggregated rows into a contiguous `months`-long
@@ -147,7 +153,17 @@ func fillMonthFlows(rows []store.MonthFlow, months int, now time.Time) []monthFl
 		m := start.AddDate(0, i, 0)
 		key := m.Format("2006-01")
 		f := byMonth[key]
-		out[i] = monthFlowRow{Label: m.Format("Jan")[:3], Month: key, IncomeMinor: f.IncomeMinor, ExpenseMinor: f.ExpenseMinor}
+		from := key + "-01"
+		to := m.AddDate(0, 1, 0).AddDate(0, 0, -1).Format("2006-01-02")
+		q := url.Values{}
+		q.Set("date_from", from)
+		q.Set("date_to", to)
+		out[i] = monthFlowRow{
+			Label: m.Format("Jan")[:3], Month: key,
+			IncomeMinor: f.IncomeMinor, ExpenseMinor: f.ExpenseMinor,
+			FromDate: from, ToDate: to,
+			TxURL: template.URL("/transactions?" + q.Encode()),
+		}
 		if f.IncomeMinor > maxMinor {
 			maxMinor = f.IncomeMinor
 		}
@@ -162,6 +178,38 @@ func fillMonthFlows(rows []store.MonthFlow, months int, now time.Time) []monthFl
 		}
 	}
 	return out
+}
+
+// flowDonut drives the income-vs-expense donut (AGENTS.md §4): two arcs, the
+// income segment green and the expense segment red, lengths proportional to
+// their share of the window's total movement; the center shows the net.
+type flowDonut struct {
+	IncomeMinor  int64
+	ExpenseMinor int64
+	NetMinor     int64 // income - expense (signed)
+	TotalMinor   int64 // income + expense (arc denominator)
+	IncomePct    int   // percent of total (0..100)
+	ExpensePct   int   // 100 - IncomePct (so arcs always tile exactly)
+	HasData      bool
+}
+
+// computeFlowDonut totals the window's income/expense rows into donut arcs.
+// Percentages are integer and derived from income only (expense = the
+// remainder) so the two arcs always tile the full circle with no rounding gap.
+func computeFlowDonut(rows []monthFlowRow) flowDonut {
+	var d flowDonut
+	for _, r := range rows {
+		d.IncomeMinor += r.IncomeMinor
+		d.ExpenseMinor += r.ExpenseMinor
+	}
+	d.TotalMinor = d.IncomeMinor + d.ExpenseMinor
+	d.NetMinor = d.IncomeMinor - d.ExpenseMinor
+	if d.TotalMinor > 0 {
+		d.HasData = true
+		d.IncomePct = int(d.IncomeMinor * 100 / d.TotalMinor)
+		d.ExpensePct = 100 - d.IncomePct
+	}
+	return d
 }
 
 // catSpendRow is the template-facing category bar.

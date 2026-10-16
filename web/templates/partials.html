@@ -22,3 +22,119 @@
 <p class="muted">No transactions yet — link a bank and run a sync.</p>
 {{end}}
 {{end}}
+
+// Income vs expenses widget (donut + month bars). The period switch reloads
+// the whole panel via HTMX (/dashboard/flows?months=N); #flows-panel is the
+// swap target, so the h2 + selector + chart + legend all refresh together.
+{{define "flows_panel"}}
+<div class="panel g-threeq" id="flows-panel">
+  <h2>
+    <span>Income vs expenses <span class="muted">donut + bars</span></span>
+    <span class="seg" role="group" aria-label="range in months">
+      <button class="seg-btn{{if eq $.Dashboard.FlowMonths 3}} on{{end}}" hx-get="/dashboard/flows?months=3" hx-target="#flows-panel" hx-swap="outerHTML">3M</button>
+      <button class="seg-btn{{if eq $.Dashboard.FlowMonths 6}} on{{end}}" hx-get="/dashboard/flows?months=6" hx-target="#flows-panel" hx-swap="outerHTML">6M</button>
+      <button class="seg-btn{{if eq $.Dashboard.FlowMonths 12}} on{{end}}" hx-get="/dashboard/flows?months=12" hx-target="#flows-panel" hx-swap="outerHTML">12M</button>
+    </span>
+  </h2>
+  {{if not $.Dashboard.HasFlows}}
+  <p class="muted">No income or expenses recorded in {{$.Dashboard.Currency}} over the last {{$.Dashboard.FlowMonths}} months.
+  Transactions with an empty booking date (some Revolut data) were backfilled from the value date —
+  re-run a sync if this looks stale.</p>
+  {{else}}
+  <div class="flow-widget">
+    <div class="donut-wrap">
+      {{if $.Dashboard.FlowDonut.HasData}}
+      <svg class="donut" viewBox="0 0 120 120" role="img"
+        aria-label="income {{$.Dashboard.FlowDonut.IncomePct}}%, expense {{$.Dashboard.FlowDonut.ExpensePct}}% over {{$.Dashboard.FlowMonths}} months, net {{fmtPlain $.Dashboard.FlowDonut.NetMinor $.Dashboard.Currency}}">
+        <circle class="donut-bg" cx="60" cy="60" r="48"></circle>
+        {{if gt $.Dashboard.FlowDonut.IncomePct 0}}
+        <circle class="donut-seg inc" cx="60" cy="60" r="48" pathLength="100"
+          stroke-dasharray="{{$.Dashboard.FlowDonut.IncomePct}} {{$.Dashboard.FlowDonut.ExpensePct}}"
+          transform="rotate(-90 60 60)"
+          data-tip="Income — {{fmtAmount $.Dashboard.FlowDonut.IncomeMinor $.Dashboard.Currency}} ({{$.Dashboard.FlowDonut.IncomePct}}%)"></circle>
+        {{end}}
+        {{if gt $.Dashboard.FlowDonut.ExpensePct 0}}
+        <circle class="donut-seg exp" cx="60" cy="60" r="48" pathLength="100"
+          stroke-dasharray="{{$.Dashboard.FlowDonut.ExpensePct}} {{$.Dashboard.FlowDonut.IncomePct}}"
+          stroke-dashoffset="-{{$.Dashboard.FlowDonut.IncomePct}}"
+          transform="rotate(-90 60 60)"
+          data-tip="Expense — {{fmtAmount $.Dashboard.FlowDonut.ExpenseMinor $.Dashboard.Currency}} ({{$.Dashboard.FlowDonut.ExpensePct}}%)"></circle>
+        {{end}}
+        <text class="donut-net-label" x="60" y="57" text-anchor="middle">Net</text>
+        <text class="donut-net {{if lt $.Dashboard.FlowDonut.NetMinor 0}}neg{{else}}pos{{end}}" x="60" y="76" text-anchor="middle">{{fmtPlain $.Dashboard.FlowDonut.NetMinor $.Dashboard.Currency}}</text>
+      </svg>
+      {{end}}
+    </div>
+    <div class="vbars">
+      {{range $.Dashboard.Flows}}
+      <a class="vbar-col" href="{{.TxURL}}"
+        data-tip="{{.Month}}: income {{fmtAmount .IncomeMinor $.Dashboard.Currency}}, expense {{fmtAmount .ExpenseMinor $.Dashboard.Currency}}">
+        <div class="vbar-bars">
+          <span class="vbar-in" style="height:{{.IncomePct}}%"></span>
+          <span class="vbar-out" style="height:{{.ExpensePct}}%"></span>
+        </div>
+        <span class="vbar-label mono">{{.Label}}</span>
+      </a>
+      {{end}}
+    </div>
+  </div>
+  <div class="legend muted">
+    <span class="lg-item"><span class="sw in"></span> income <strong class="num">{{fmtPlain $.Dashboard.FlowDonut.IncomeMinor $.Dashboard.Currency}}</strong> ({{$.Dashboard.FlowDonut.IncomePct}}%)</span>
+    <span class="lg-item"><span class="sw out"></span> expense <strong class="num">{{fmtPlain $.Dashboard.FlowDonut.ExpenseMinor $.Dashboard.Currency}}</strong> ({{$.Dashboard.FlowDonut.ExpensePct}}%)</span>
+    <span class="lg-item"><span class="sw net {{if lt $.Dashboard.FlowDonut.NetMinor 0}}neg{{else}}pos{{end}}"></span> net <strong class="num {{if lt $.Dashboard.FlowDonut.NetMinor 0}}neg{{else}}pos{{end}}">{{fmtPlain $.Dashboard.FlowDonut.NetMinor $.Dashboard.Currency}}</strong></span>
+  </div>
+  <div class="chart-tip" aria-hidden="true" hidden></div>
+  {{end}}
+</div>
+{{end}}
+
+// Balance trend widget (derived per-account series + crosshair). Same HTMX
+// reload pattern as flows_panel; the crosshair script re-binds on swap
+// (see app.js).
+{{define "balance_panel"}}
+<div class="panel g-full" id="balance-panel">
+  <h2>
+    <span>Balance trend <span class="muted">derived from daily transactions</span></span>
+    <span class="seg" role="group" aria-label="range in days">
+      <button class="seg-btn{{if eq $.Dashboard.BalanceDays 30}} on{{end}}" hx-get="/dashboard/balance?days=30" hx-target="#balance-panel" hx-swap="outerHTML">30d</button>
+      <button class="seg-btn{{if eq $.Dashboard.BalanceDays 90}} on{{end}}" hx-get="/dashboard/balance?days=90" hx-target="#balance-panel" hx-swap="outerHTML">90d</button>
+      <button class="seg-btn{{if eq $.Dashboard.BalanceDays 180}} on{{end}}" hx-get="/dashboard/balance?days=180" hx-target="#balance-panel" hx-swap="outerHTML">180d</button>
+      <button class="seg-btn{{if eq $.Dashboard.BalanceDays 365}} on{{end}}" hx-get="/dashboard/balance?days=365" hx-target="#balance-panel" hx-swap="outerHTML">1y</button>
+      <button class="seg-btn{{if eq $.Dashboard.BalanceDays 0}} on{{end}}" hx-get="/dashboard/balance?days=0" hx-target="#balance-panel" hx-swap="outerHTML">All</button>
+    </span>
+  </h2>
+  {{if $.Dashboard.Balance.Series}}
+  <script type="application/json" id="balance-data">{{jsJSON $.Dashboard.BalanceJSON}}</script>
+  <div class="balance-wrap">
+    <svg class="balance" viewBox="0 0 1200 200" preserveAspectRatio="none" role="img" aria-label="balance trend">
+      {{range $.Dashboard.Balance.Series}}
+      <polyline class="bal {{.Class}}" points="{{.Points}}" vector-effect="non-scaling-stroke"></polyline>
+      {{end}}
+    </svg>
+    <svg class="cursor" hidden aria-hidden="true">
+      <defs>
+        {{range $.Dashboard.Balance.Series}}
+        <marker id="cd-{{.Class}}" viewBox="-5 -5 10 10" refX="0" refY="0" markerWidth="12" markerHeight="12">
+          <circle class="cdot {{.Class}}" cx="0" cy="0" r="4.5"></circle>
+        </marker>
+        {{end}}
+      </defs>
+      <line class="cur-v"></line>
+      <line class="cur-h"></line>
+      {{range $.Dashboard.Balance.Series}}<polyline class="cur-dots" marker-end="url(#cd-{{.Class}})"></polyline>{{end}}
+    </svg>
+    <div class="cursor-label" hidden></div>
+  </div>
+  <div class="legend muted">
+    {{range $.Dashboard.Balance.Series}}
+    <span class="lg-item"><span class="sw {{.Class}}"></span> {{.Label}}</span>
+    {{end}}
+    <span class="lg-break"></span>
+    <span class="lg-item">{{fmtAmount $.Dashboard.Balance.Min $.Dashboard.Currency}} ↔ {{fmtAmount $.Dashboard.Balance.Max $.Dashboard.Currency}}</span>
+    <span class="lg-item lg-right">since {{$.Dashboard.Since}}</span>
+  </div>
+  {{else}}
+  <p class="muted">No balance history to show yet (accounts gain balances after a sync).</p>
+  {{end}}
+</div>
+{{end}}

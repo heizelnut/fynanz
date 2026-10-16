@@ -78,6 +78,21 @@ func IsRetryableError(err error) bool {
 	return retryableErrorCodes[ae.Code]
 }
 
+// wrongTransactionsPeriod is Enable Banking's rejection of a transaction
+// history window the ASPSP won't serve (e.g. requesting a full year from a
+// bank that caps at 90 days under PSD2).
+const wrongTransactionsPeriod = "WRONG_TRANSACTIONS_PERIOD"
+
+// IsWrongTransactionsPeriod reports whether err is that rejection — the
+// trigger for the shorter-window fallback in Service.SyncLink.
+func IsWrongTransactionsPeriod(err error) bool {
+	var ae *APIError
+	if !errors.As(err, &ae) {
+		return false
+	}
+	return ae.Code == wrongTransactionsPeriod
+}
+
 // Credentials is the identity a Client signs requests with. Configurable
 // per request so credentials can live in the DB (Settings page) and change
 // without restarting (see NewDynamicClient).
