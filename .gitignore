@@ -21,3 +21,6 @@ tmp/
 
 # OS cruft
 .DS_Store
+
+# compiled binary
+server

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -37,11 +38,17 @@ func TestFinanceCollector(t *testing.T) {
 	bal := int64(554800) // mocked current balance
 	_ = bal
 	cats, _ := st.ListCategories(ctx, uid)
+	// Seed relative to the current month: the collector windows on the current
+	// month, so fixed dates make this test time-bomb as the calendar advances.
+	now := time.Now().UTC()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	cur := func(day int) string { return monthStart.AddDate(0, 0, day-1).Format("2006-01-02") }
+	prevMonth := monthStart.AddDate(0, 0, -1).Format("2006-01-02")
 	ins, _, _ := st.InsertTransactions(ctx, uid, ids["u1"], []store.TransactionInput{
-		{EntryReference: "m1", BookingDate: "2026-08-05", AmountMinor: -1234, Currency: "EUR", CreditDebit: "DBIT", CategoryID: g(cats[1].ID), CategorySource: store.CatSourceRule, MerchantNormalized: "m"},
-		{EntryReference: "m2", BookingDate: "2026-08-06", AmountMinor: 50000, Currency: "EUR", CreditDebit: "CRDT", CategoryID: g(cats[0].ID), CategorySource: store.CatSourceRule, MerchantNormalized: "m"},
-		{EntryReference: "m3", BookingDate: "2026-07-30", AmountMinor: -999, Currency: "EUR", CreditDebit: "DBIT", CategoryID: g(cats[1].ID), CategorySource: store.CatSourceRule, MerchantNormalized: "m"},
-		{EntryReference: "m4", BookingDate: "2026-08-01", AmountMinor: -111, Currency: "USD", CreditDebit: "DBIT", CategoryID: g(cats[4].ID), CategorySource: store.CatSourceRule, MerchantNormalized: "m"},
+		{EntryReference: "m1", BookingDate: cur(5), AmountMinor: -1234, Currency: "EUR", CreditDebit: "DBIT", CategoryID: g(cats[1].ID), CategorySource: store.CatSourceRule, MerchantNormalized: "m"},
+		{EntryReference: "m2", BookingDate: cur(6), AmountMinor: 50000, Currency: "EUR", CreditDebit: "CRDT", CategoryID: g(cats[0].ID), CategorySource: store.CatSourceRule, MerchantNormalized: "m"},
+		{EntryReference: "m3", BookingDate: prevMonth, AmountMinor: -999, Currency: "EUR", CreditDebit: "DBIT", CategoryID: g(cats[1].ID), CategorySource: store.CatSourceRule, MerchantNormalized: "m"},
+		{EntryReference: "m4", BookingDate: cur(1), AmountMinor: -111, Currency: "USD", CreditDebit: "DBIT", CategoryID: g(cats[4].ID), CategorySource: store.CatSourceRule, MerchantNormalized: "m"},
 	})
 	if ins != 4 {
 		t.Fatalf("inserted %d, want 4", ins)
@@ -77,10 +84,10 @@ func TestFinanceCollector(t *testing.T) {
 		}
 	}
 
-	// August EUR expenses: 12.34 (July -9.99 excluded by month window).
+	// Current-month EUR expenses: 12.34 (previous-month -9.99 excluded by the window).
 	exp := got["fynanz_finance_expenses"]
 	if exp["category=Groceries,currency=EUR"] != 1234 {
-		t.Errorf("august groceries expense = %v, want 1234", exp["category=Groceries,currency=EUR"])
+		t.Errorf("current-month groceries expense = %v, want 1234", exp["category=Groceries,currency=EUR"])
 	}
 	if exp["category=Utilities & Bills,currency=USD"] != 111 {
 		t.Errorf("USD category missing: %+v", exp)
